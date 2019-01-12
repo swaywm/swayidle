@@ -11,8 +11,6 @@ project(
 
 add_project_arguments(
 	[
-		'-DWL_HIDE_DEPRECATED',
-		'-DWLR_USE_UNSTABLE',
 		'-Wno-unused-parameter',
 		'-Wno-unused-result',
 		'-Wundef',
@@ -27,7 +25,6 @@ pixman = dependency('pixman-1')
 wayland_client = dependency('wayland-client')
 wayland_protos = dependency('wayland-protocols', version: '>=1.14')
 wayland_server = dependency('wayland-server')
-wlroots = dependency('wlroots')
 
 scdoc = find_program('scdoc', required: false)
 wayland_scanner = find_program('wayland-scanner')
@@ -71,7 +68,6 @@ swayidle_deps = [
 	pixman,
 	wayland_client,
 	wayland_server,
-	wlroots,
 ]
 
 if systemd.found()
