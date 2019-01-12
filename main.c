@@ -18,7 +18,6 @@
 #include <wlr/util/log.h>
 #include "config.h"
 #include "idle-client-protocol.h"
-#include "list.h"
 #if HAVE_SYSTEMD
 #include <systemd/sd-bus.h>
 #include <systemd/sd-login.h>
@@ -33,11 +32,12 @@ static struct wl_seat *seat = NULL;
 struct swayidle_state {
 	struct wl_display *display;
 	struct wl_event_loop *event_loop;
-	list_t *timeout_cmds; // struct swayidle_timeout_cmd *
+	struct wl_list timeout_cmds; // struct swayidle_timeout_cmd *
 	char *lock_cmd;
 } state;
 
 struct swayidle_timeout_cmd {
+	struct wl_list link;
 	int timeout, registered_timeout;
 	struct org_kde_kwin_idle_timeout *idle_timer;
 	char *idle_cmd;
@@ -318,7 +318,7 @@ static int parse_timeout(int argc, char **argv) {
 		cmd->resume_cmd = parse_command(argc - 4, &argv[4]);
 		result = 5;
 	}
-	list_add(state.timeout_cmds, cmd);
+	wl_list_insert(&state.timeout_cmds, &cmd->link);
 	return result;
 }
 
@@ -359,7 +359,7 @@ static int parse_args(int argc, char *argv[]) {
 
 	wlr_log_init(debug ? WLR_DEBUG : WLR_INFO, NULL);
 
-	state.timeout_cmds = create_list();
+	wl_list_init(&state.timeout_cmds);
 
 	int i = optind;
 	while (i < argc) {
@@ -386,8 +386,9 @@ static int handle_signal(int sig, void *data) {
 		return 0;
 	case SIGUSR1:
 		wlr_log(WLR_DEBUG, "Got SIGUSR1");
-		for (int i = 0; i < state.timeout_cmds->length; ++i) {
-			register_timeout(state.timeout_cmds->items[i], 0);
+		struct swayidle_timeout_cmd *cmd;
+		wl_list_for_each(cmd, &state.timeout_cmds, link) {
+			register_timeout(cmd, 0);
 		}
 		return 1;
 	}
@@ -451,7 +452,7 @@ int main(int argc, char *argv[]) {
 		return -5;
 	}
 
-	bool should_run = state.timeout_cmds->length > 0;
+	bool should_run = !wl_list_empty(&state.timeout_cmds);
 #if HAVE_SYSTEMD || HAVE_ELOGIND
 	if (state.lock_cmd) {
 		should_run = true;
@@ -463,8 +464,8 @@ int main(int argc, char *argv[]) {
 		sway_terminate(0);
 	}
 
-	for (int i = 0; i < state.timeout_cmds->length; ++i) {
-		struct swayidle_timeout_cmd *cmd = state.timeout_cmds->items[i];
+	struct swayidle_timeout_cmd *cmd;
+	wl_list_for_each(cmd, &state.timeout_cmds, link) {
 		register_timeout(cmd, cmd->timeout);
 	}
 
