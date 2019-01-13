@@ -32,6 +32,7 @@ struct swayidle_state {
 	struct wl_event_loop *event_loop;
 	struct wl_list timeout_cmds; // struct swayidle_timeout_cmd *
 	char *lock_cmd;
+	bool wait;
 } state;
 
 struct swayidle_timeout_cmd {
@@ -83,7 +84,9 @@ static void cmd_exec(char *param) {
 	swayidle_log(LOG_DEBUG, "Cmd exec %s", param);
 	pid_t pid = fork();
 	if (pid == 0) {
-		pid = fork();
+		if (!state.wait) {
+			pid = fork();
+		}
 		if (pid == 0) {
 			char *const cmd[] = { "sh", "-c", param, NULL, };
 			execvp(cmd[0], cmd);
@@ -357,16 +360,20 @@ static int parse_sleep(int argc, char **argv) {
 
 static int parse_args(int argc, char *argv[]) {
 	int c;
-	while ((c = getopt(argc, argv, "hd")) != -1) {
+	while ((c = getopt(argc, argv, "hdw")) != -1) {
 		switch (c) {
 		case 'd':
 			verbosity = LOG_DEBUG;
 			break;
+		case 'w':
+			state.wait = true;
+			break;
 		case 'h':
 		case '?':
 			printf("Usage: %s [OPTIONS]\n", argv[0]);
-			printf("  -d\tdebug\n");
 			printf("  -h\tthis help menu\n");
+			printf("  -d\tdebug\n");
+			printf("  -w\twait for command to finish\n");
 			return 1;
 		default:
 			return 1;
