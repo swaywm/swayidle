@@ -20,7 +20,6 @@ add_project_arguments(
 
 elogind = dependency('libelogind', required: false)
 systemd = dependency('libsystemd', required: false)
-threads = dependency('threads')
 wayland_client = dependency('wayland-client')
 wayland_protos = dependency('wayland-protocols', version: '>=1.14')
 wayland_server = dependency('wayland-server')
