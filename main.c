@@ -117,8 +117,7 @@ static void acquire_sleep_lock(void) {
 	if (ret < 0) {
 		swayidle_log(LOG_ERROR,
 				"Failed to send Inhibit signal: %s", error.message);
-		sd_bus_error_free(&error);
-		return;
+		goto cleanup;
 	}
 
 	ret = sd_bus_message_read(msg, "h", &lock_fd);
@@ -126,20 +125,19 @@ static void acquire_sleep_lock(void) {
 		errno = -ret;
 		swayidle_log_errno(LOG_ERROR,
 				"Failed to parse D-Bus response for Inhibit");
-		sd_bus_error_free(&error);
-		sd_bus_message_unref(msg);
-		return;
-	} else {
-		swayidle_log(LOG_INFO, "Got sleep lock: %d", lock_fd);
+		goto cleanup;
 	}
 
 	// sd_bus_message_unref closes the file descriptor so we need
 	// to copy it beforehand
 	lock_fd = fcntl(lock_fd, F_DUPFD_CLOEXEC, 3);
-	if (lock_fd < 0) {
-		swayidle_log(LOG_ERROR, "Failed to copy sleep lock fd");
+	if (lock_fd >= 0) {
+		swayidle_log(LOG_INFO, "Got sleep lock: %d", lock_fd);
+	} else {
+		swayidle_log_errno(LOG_ERROR, "Failed to copy sleep lock fd");
 	}
 
+cleanup:
 	sd_bus_error_free(&error);
 	sd_bus_message_unref(msg);
 }
