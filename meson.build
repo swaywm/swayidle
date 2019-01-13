@@ -21,7 +21,6 @@ add_project_arguments(
 elogind = dependency('libelogind', required: false)
 systemd = dependency('libsystemd', required: false)
 threads = dependency('threads')
-pixman = dependency('pixman-1')
 wayland_client = dependency('wayland-client')
 wayland_protos = dependency('wayland-protocols', version: '>=1.14')
 wayland_server = dependency('wayland-server')
@@ -65,7 +64,6 @@ client_protos = declare_dependency(
 
 swayidle_deps = [
 	client_protos,
-	pixman,
 	wayland_client,
 	wayland_server,
 ]
