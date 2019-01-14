@@ -32,6 +32,7 @@ struct swayidle_state {
 	struct wl_event_loop *event_loop;
 	struct wl_list timeout_cmds; // struct swayidle_timeout_cmd *
 	char *lock_cmd;
+	bool wait;
 } state;
 
 struct swayidle_timeout_cmd {
@@ -83,7 +84,9 @@ static void cmd_exec(char *param) {
 	swayidle_log(LOG_DEBUG, "Cmd exec %s", param);
 	pid_t pid = fork();
 	if (pid == 0) {
-		pid = fork();
+		if (!state.wait) {
+			pid = fork();
+		}
 		if (pid == 0) {
 			char *const cmd[] = { "sh", "-c", param, NULL, };
 			execvp(cmd[0], cmd);
@@ -104,17 +107,7 @@ static void cmd_exec(char *param) {
 
 #if HAVE_SYSTEMD || HAVE_ELOGIND
 static int lock_fd = -1;
-static int ongoing_fd = -1;
 static struct sd_bus *bus = NULL;
-
-static int release_lock(void *data) {
-	swayidle_log(LOG_INFO, "Releasing sleep lock %d", ongoing_fd);
-	if (ongoing_fd >= 0) {
-		close(ongoing_fd);
-	}
-	ongoing_fd = -1;
-	return 0;
-}
 
 static void acquire_sleep_lock(void) {
 	sd_bus_message *msg = NULL;
@@ -127,8 +120,7 @@ static void acquire_sleep_lock(void) {
 	if (ret < 0) {
 		swayidle_log(LOG_ERROR,
 				"Failed to send Inhibit signal: %s", error.message);
-		sd_bus_error_free(&error);
-		return;
+		goto cleanup;
 	}
 
 	ret = sd_bus_message_read(msg, "h", &lock_fd);
@@ -136,20 +128,19 @@ static void acquire_sleep_lock(void) {
 		errno = -ret;
 		swayidle_log_errno(LOG_ERROR,
 				"Failed to parse D-Bus response for Inhibit");
-		sd_bus_error_free(&error);
-		sd_bus_message_unref(msg);
-		return;
-	} else {
-		swayidle_log(LOG_INFO, "Got sleep lock: %d", lock_fd);
+		goto cleanup;
 	}
 
 	// sd_bus_message_unref closes the file descriptor so we need
 	// to copy it beforehand
 	lock_fd = fcntl(lock_fd, F_DUPFD_CLOEXEC, 3);
-	if (lock_fd < 0) {
-		swayidle_log(LOG_ERROR, "Failed to copy sleep lock fd");
+	if (lock_fd >= 0) {
+		swayidle_log(LOG_INFO, "Got sleep lock: %d", lock_fd);
+	} else {
+		swayidle_log_errno(LOG_ERROR, "Failed to copy sleep lock fd");
 	}
 
+cleanup:
 	sd_bus_error_free(&error);
 	sd_bus_message_unref(msg);
 }
@@ -170,19 +161,17 @@ static int prepare_for_sleep(sd_bus_message *msg, void *userdata,
 		return 0;
 	}
 
-	ongoing_fd = lock_fd;
-
 	if (state.lock_cmd) {
 		cmd_exec(state.lock_cmd);
 	}
-
-	if (ongoing_fd >= 0) {
-		struct wl_event_source *source =
-			wl_event_loop_add_timer(state.event_loop, release_lock, NULL);
-		wl_event_source_timer_update(source, 1000);
-	}
-
 	swayidle_log(LOG_DEBUG, "Prepare for sleep done");
+
+	swayidle_log(LOG_INFO, "Releasing sleep lock %d", lock_fd);
+	if (lock_fd >= 0) {
+		close(lock_fd);
+	}
+	lock_fd = -1;
+
 	return 0;
 }
 
@@ -371,16 +360,20 @@ static int parse_sleep(int argc, char **argv) {
 
 static int parse_args(int argc, char *argv[]) {
 	int c;
-	while ((c = getopt(argc, argv, "hd")) != -1) {
+	while ((c = getopt(argc, argv, "hdw")) != -1) {
 		switch (c) {
 		case 'd':
 			verbosity = LOG_DEBUG;
 			break;
+		case 'w':
+			state.wait = true;
+			break;
 		case 'h':
 		case '?':
 			printf("Usage: %s [OPTIONS]\n", argv[0]);
-			printf("  -d\tdebug\n");
 			printf("  -h\tthis help menu\n");
+			printf("  -d\tdebug\n");
+			printf("  -w\twait for command to finish\n");
 			return 1;
 		default:
 			return 1;
