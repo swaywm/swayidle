@@ -1,0 +1,16 @@
+image: alpine/edge
+packages:
+  - meson
+  - wayland-dev
+  - wayland-protocols
+  - scdoc
+sources:
+  - https://github.com/swaywm/swayidle
+tasks:
+  - setup: |
+      cd swayidle
+      meson build
+  - build: |
+      cd swayidle
+      ninja -C build
+
