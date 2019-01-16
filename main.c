@@ -211,7 +211,6 @@ static void setup_sleep_listener(void) {
 
 	char str[256];
 	const char *fmt = "type='signal',"
-		"sender='org.freedesktop.login1',"
 		"interface='org.freedesktop.login1.%s',"
 		"member='%s'," "path='%s'";
 
