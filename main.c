@@ -497,7 +497,7 @@ int main(int argc, char *argv[]) {
 
 	bool should_run = !wl_list_empty(&state.timeout_cmds);
 #if HAVE_SYSTEMD || HAVE_ELOGIND
-	if (state.lock_cmd) {
+	if (state.lock_cmd || state.after_resume_cmd) {
 		should_run = true;
 		setup_sleep_listener();
 	}
