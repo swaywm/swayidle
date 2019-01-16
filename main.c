@@ -159,6 +159,9 @@ static int prepare_for_sleep(sd_bus_message *msg, void *userdata,
 	swayidle_log(LOG_DEBUG, "PrepareForSleep signal received %d", going_down);
 	if (!going_down) {
 		acquire_sleep_lock();
+		if (state.after_resume_cmd) {
+			cmd_exec(state.after_resume_cmd);
+		}
 		return 0;
 	}
 
