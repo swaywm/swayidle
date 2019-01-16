@@ -209,18 +209,12 @@ static void setup_sleep_listener(void) {
 		return;
 	}
 
-	char str[256];
-	const char *fmt = "type='signal',"
-		"sender='org.freedesktop.login1',"
-		"interface='org.freedesktop.login1.%s',"
-		"member='%s'," "path='%s'";
-
-	snprintf(str, sizeof(str), fmt, "Manager", "PrepareForSleep",
-			"/org/freedesktop/login1");
-	ret = sd_bus_add_match(bus, NULL, str, prepare_for_sleep, NULL);
+	ret = sd_bus_match_signal(bus, NULL, "org.freedesktop.login1",
+                "/org/freedesktop/login1", "org.freedesktop.login1.Manager",
+                "PrepareForSleep", prepare_for_sleep, NULL);
 	if (ret < 0) {
 		errno = -ret;
-		swayidle_log_errno(LOG_ERROR, "Failed to add D-Bus match");
+		swayidle_log_errno(LOG_ERROR, "Failed to add D-Bus signal match");
 		return;
 	}
 	acquire_sleep_lock();
