@@ -46,6 +46,10 @@ Sending SIGUSR1 to swayidle will immediately enter idle state.
 	the option InhibitDelayMaxSec. A command that has not finished by then will
 	continue running after resuming from sleep.
 
+*after-resume* <command>
+	If built with systemd support, executes _command_ after logind signals that the
+	computer resumed from sleep.
+
 All commands are executed in a shell.
 
 # EXAMPLE
