@@ -31,7 +31,7 @@ struct swayidle_state {
 	struct wl_display *display;
 	struct wl_event_loop *event_loop;
 	struct wl_list timeout_cmds; // struct swayidle_timeout_cmd *
-	char *lock_cmd;
+	char *before_sleep_cmd;
 	char *after_resume_cmd;
 	bool wait;
 } state;
@@ -165,8 +165,8 @@ static int prepare_for_sleep(sd_bus_message *msg, void *userdata,
 		return 0;
 	}
 
-	if (state.lock_cmd) {
-		cmd_exec(state.lock_cmd);
+	if (state.before_sleep_cmd) {
+		cmd_exec(state.before_sleep_cmd);
 	}
 	swayidle_log(LOG_DEBUG, "Prepare for sleep done");
 
@@ -348,9 +348,9 @@ static int parse_sleep(int argc, char **argv) {
 		exit(-1);
 	}
 
-	state.lock_cmd = parse_command(argc - 1, &argv[1]);
-	if (state.lock_cmd) {
-		swayidle_log(LOG_DEBUG, "Setup sleep lock: %s", state.lock_cmd);
+	state.before_sleep_cmd = parse_command(argc - 1, &argv[1]);
+	if (state.before_sleep_cmd) {
+		swayidle_log(LOG_DEBUG, "Setup sleep lock: %s", state.before_sleep_cmd);
 	}
 
 	return 2;
@@ -491,7 +491,7 @@ int main(int argc, char *argv[]) {
 
 	bool should_run = !wl_list_empty(&state.timeout_cmds);
 #if HAVE_SYSTEMD || HAVE_ELOGIND
-	if (state.lock_cmd || state.after_resume_cmd) {
+	if (state.before_sleep_cmd || state.after_resume_cmd) {
 		should_run = true;
 		setup_sleep_listener();
 	}
