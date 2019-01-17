@@ -32,6 +32,7 @@ struct swayidle_state {
 	struct wl_event_loop *event_loop;
 	struct wl_list timeout_cmds; // struct swayidle_timeout_cmd *
 	char *lock_cmd;
+	char *after_resume_cmd;
 	bool wait;
 } state;
 
@@ -158,6 +159,9 @@ static int prepare_for_sleep(sd_bus_message *msg, void *userdata,
 	swayidle_log(LOG_DEBUG, "PrepareForSleep signal received %d", going_down);
 	if (!going_down) {
 		acquire_sleep_lock();
+		if (state.after_resume_cmd) {
+			cmd_exec(state.after_resume_cmd);
+		}
 		return 0;
 	}
 
@@ -352,6 +356,21 @@ static int parse_sleep(int argc, char **argv) {
 	return 2;
 }
 
+static int parse_resume(int argc, char **argv) {
+	if (argc < 2) {
+		swayidle_log(LOG_ERROR, "Too few parameters to after-resume command. "
+				"Usage: after-resume <command>");
+		exit(-1);
+	}
+
+	state.after_resume_cmd = parse_command(argc - 1, &argv[1]);
+	if (state.after_resume_cmd) {
+		swayidle_log(LOG_DEBUG, "Setup resume hook: %s", state.after_resume_cmd);
+	}
+
+	return 2;
+}
+
 static int parse_args(int argc, char *argv[]) {
 	int c;
 	while ((c = getopt(argc, argv, "hdw")) != -1) {
@@ -384,6 +403,9 @@ static int parse_args(int argc, char *argv[]) {
 		} else if (!strcmp("before-sleep", argv[i])) {
 			swayidle_log(LOG_DEBUG, "Got before-sleep");
 			i += parse_sleep(argc - i, &argv[i]);
+		} else if (!strcmp("after-resume", argv[i])) {
+			swayidle_log(LOG_DEBUG, "Got after-resume");
+			i += parse_resume(argc - i, &argv[i]);
 		} else {
 			swayidle_log(LOG_ERROR, "Unsupported command '%s'", argv[i]);
 			return 1;
@@ -469,7 +491,7 @@ int main(int argc, char *argv[]) {
 
 	bool should_run = !wl_list_empty(&state.timeout_cmds);
 #if HAVE_SYSTEMD || HAVE_ELOGIND
-	if (state.lock_cmd) {
+	if (state.lock_cmd || state.after_resume_cmd) {
 		should_run = true;
 		setup_sleep_listener();
 	}
