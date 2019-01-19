@@ -69,8 +69,8 @@ It will also lock your screen before your computer goes to sleep.
 # AUTHORS
 
 Maintained by Drew DeVault <sir@cmpwn.com>, who is assisted by other open
-source contributors. For more information about sway development, see
-https://github.com/swaywm/sway.
+source contributors. For more information about swayidle development, see
+https://github.com/swaywm/swayidle.
 
 # SEE ALSO
 
