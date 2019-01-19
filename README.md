@@ -8,20 +8,18 @@ See the man page, `swayidle(1)`, for instructions on configuring swayidle.
 ## Release Signatures
 
 Releases are signed with [B22DA89A](http://pgp.mit.edu/pks/lookup?op=vindex&search=0x52CB6609B22DA89A)
-and published [on GitHub](https://github.com/swaywm/sway/releases). swayidle
+and published [on GitHub](https://github.com/swaywm/swayidle/releases). swayidle
 releases are managed independently of sway releases.
 
 ## Installation
 
 ### From Packages
 
-Sway is available in many distributions. Try installing the "swayidle" package
-for yours. If it's not available, check out [this wiki
-page](https://github.com/swaywm/sway/wiki/Unsupported-packages) for information
-on installation for your distributions.
+Swayidle is available in many distributions. Try installing the "swayidle"
+package for yours.
 
-If you're interested in packaging sway for your distribution, stop by the IRC
-channel or shoot an email to sir@cmpwn.com for advice.
+If you're interested in packaging swayidle for your distribution, stop by the
+IRC channel or shoot an email to sir@cmpwn.com for advice.
 
 ### Compiling from Source
 
