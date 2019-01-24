@@ -20,11 +20,10 @@ add_project_arguments(
 	language: 'c',
 )
 
-elogind = dependency('libelogind', required: false)
-systemd = dependency('libsystemd', required: false)
 wayland_client = dependency('wayland-client')
 wayland_protos = dependency('wayland-protocols', version: '>=1.14')
 wayland_server = dependency('wayland-server')
+logind = dependency('lib' + get_option('logind-provider'), required: get_option('logind'))
 
 scdoc = find_program('scdoc', required: get_option('man-pages'))
 wayland_scanner = find_program('wayland-scanner')
@@ -69,24 +68,23 @@ swayidle_deps = [
 	wayland_server,
 ]
 
-if systemd.found()
-	swayidle_deps += systemd
-endif
-if elogind.found()
-	swayidle_deps += elogind
+conf_data = configuration_data()
+conf_data.set10('HAVE_SYSTEMD', false)
+conf_data.set10('HAVE_ELOGIND', false)
+
+if logind.found()
+	swayidle_deps += logind
+	conf_data.set10('HAVE_' + get_option('logind-provider').to_upper(), true)
 endif
 
-conf_data = configuration_data()
-conf_data.set10('HAVE_SYSTEMD', systemd.found())
-conf_data.set10('HAVE_ELOGIND', elogind.found())
-configure_file(output: 'config.h',  configuration: conf_data)
+configure_file(output: 'config.h', configuration: conf_data)
 
 executable(
 	'swayidle', [
 		'main.c',
 	],
 	dependencies: swayidle_deps,
-	install: true
+	install: true,
 )
 
 if scdoc.found()
@@ -115,7 +113,7 @@ endif
 
 datadir = get_option('datadir')
 
-if (get_option('zsh-completions'))
+if get_option('zsh-completions')
 	zsh_files = files(
 		'completions/zsh/_swayidle',
 	)
@@ -124,7 +122,7 @@ if (get_option('zsh-completions'))
 	install_data(zsh_files, install_dir: zsh_install_dir)
 endif
 
-if (get_option('bash-completions'))
+if get_option('bash-completions')
 	bash_files = files(
 		'completions/bash/swayidle',
 	)
@@ -133,7 +131,7 @@ if (get_option('bash-completions'))
 	install_data(bash_files, install_dir: bash_install_dir)
 endif
 
-if (get_option('fish-completions'))
+if get_option('fish-completions')
 	fish_files = files(
 		'completions/fish/swayidle.fish',
 	)
