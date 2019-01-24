@@ -2,6 +2,7 @@ project(
 	'swayidle',
 	'c',
 	license: 'MIT',
+	meson_version: '>=0.48.0',
 	default_options: [
 		'c_std=c11',
 		'warning_level=2',
@@ -25,7 +26,7 @@ wayland_client = dependency('wayland-client')
 wayland_protos = dependency('wayland-protocols', version: '>=1.14')
 wayland_server = dependency('wayland-server')
 
-scdoc = find_program('scdoc', required: false)
+scdoc = find_program('scdoc', required: get_option('man-pages'))
 wayland_scanner = find_program('wayland-scanner')
 
 wl_protocol_dir = wayland_protos.get_pkgconfig_variable('pkgdatadir')
