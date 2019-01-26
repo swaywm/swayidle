@@ -167,6 +167,8 @@ static int prepare_for_sleep(sd_bus_message *msg, void *userdata,
 
 	if (state.before_sleep_cmd) {
 		cmd_exec(state.before_sleep_cmd);
+		// sleep for a microsecond, to allow the command to really spawn
+		nanosleep((const struct timespec[]){{0, 1000000L}}, NULL);
 	}
 	swayidle_log(LOG_DEBUG, "Prepare for sleep done");
 
