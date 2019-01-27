@@ -55,16 +55,19 @@ All commands are executed in a shell.
 # EXAMPLE
 
 ```
-swayidle \
-	timeout 300 'swaylock -c 000000' \
+swayidle -w \
+	timeout 300 'swaylock -f -c 000000' \
 	timeout 600 'swaymsg "output * dpms off"' \
 		resume 'swaymsg "output * dpms on"' \
-	before-sleep 'swaylock -c 000000'
+	before-sleep 'swaylock -f -c 000000'
 ```
 
 This will lock your screen after 300 seconds of inactivity, then turn off your
 displays after another 300 seconds, and turn your screens back on when resumed.
 It will also lock your screen before your computer goes to sleep.
+
+To make sure swayidle waits for swaylock to lock the screen before it releases the
+inhibition lock, the *-w* options is used in swayidle, and *-f* in swaylock.
 
 # AUTHORS
 
