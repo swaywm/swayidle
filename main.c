@@ -342,6 +342,11 @@ static int parse_timeout(int argc, char **argv) {
 }
 
 static int parse_sleep(int argc, char **argv) {
+#if !HAVE_SYSTEMD && !HAVE_ELOGIND
+	swayidle_log(LOG_ERROR, "before-sleep not supported: swayidle was compiled "
+		       "with neither systemd nor elogind support.");
+	exit(-1);
+#endif
 	if (argc < 2) {
 		swayidle_log(LOG_ERROR, "Too few parameters to before-sleep command. "
 				"Usage: before-sleep <command>");
@@ -357,6 +362,11 @@ static int parse_sleep(int argc, char **argv) {
 }
 
 static int parse_resume(int argc, char **argv) {
+#if !HAVE_SYSTEMD && !HAVE_ELOGIND
+	swayidle_log(LOG_ERROR, "after-resume not supported: swayidle was compiled "
+			"with neither systemd nor elogind support.");
+	exit(-1);
+#endif
 	if (argc < 2) {
 		swayidle_log(LOG_ERROR, "Too few parameters to after-resume command. "
 				"Usage: after-resume <command>");
