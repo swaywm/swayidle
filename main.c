@@ -33,6 +33,8 @@ struct swayidle_state {
 	struct wl_list timeout_cmds; // struct swayidle_timeout_cmd *
 	char *before_sleep_cmd;
 	char *after_resume_cmd;
+	char *logind_lock_cmd;
+	char *logind_unlock_cmd;
 	bool wait;
 } state;
 
@@ -109,6 +111,7 @@ static void cmd_exec(char *param) {
 #if HAVE_SYSTEMD || HAVE_ELOGIND
 static int lock_fd = -1;
 static struct sd_bus *bus = NULL;
+static char *session_name = NULL;
 
 static void acquire_sleep_lock(void) {
 	sd_bus_message *msg = NULL;
@@ -178,6 +181,29 @@ static int prepare_for_sleep(sd_bus_message *msg, void *userdata,
 
 	return 0;
 }
+static int handle_lock(sd_bus_message *msg, void *userdata,
+		sd_bus_error *ret_error) {
+	swayidle_log(LOG_DEBUG, "Lock signal received");
+
+	if (state.logind_lock_cmd) {
+		cmd_exec(state.logind_lock_cmd);
+	}
+	swayidle_log(LOG_DEBUG, "Lock command done");
+
+	return 0;
+}
+
+static int handle_unlock(sd_bus_message *msg, void *userdata,
+		sd_bus_error *ret_error) {
+	swayidle_log(LOG_DEBUG, "Unlock signal received");
+
+	if (state.logind_unlock_cmd) {
+		cmd_exec(state.logind_unlock_cmd);
+	}
+	swayidle_log(LOG_DEBUG, "Unlock command done");
+
+	return 0;
+}
 
 static int dbus_event(int fd, uint32_t mask, void *data) {
 	sd_bus *bus = data;
@@ -205,27 +231,74 @@ static int dbus_event(int fd, uint32_t mask, void *data) {
 	return count;
 }
 
-static void setup_sleep_listener(void) {
+static void connect_to_bus(void) {
 	int ret = sd_bus_default_system(&bus);
+	sd_bus_message *msg = NULL;
+	sd_bus_error error = SD_BUS_ERROR_NULL;
+	pid_t my_pid = getpid();
+	const char *session_name_tmp;
 	if (ret < 0) {
 		errno = -ret;
 		swayidle_log_errno(LOG_ERROR, "Failed to open D-Bus connection");
 		return;
 	}
+	struct wl_event_source *source = wl_event_loop_add_fd(state.event_loop,
+		sd_bus_get_fd(bus), WL_EVENT_READABLE, dbus_event, bus);
+	wl_event_source_check(source);
+	ret = sd_bus_call_method(bus, "org.freedesktop.login1",
+			"/org/freedesktop/login1",
+			"org.freedesktop.login1.Manager", "GetSessionByPID",
+			&error, &msg, "u", my_pid);
+	if (ret < 0) {
+		swayidle_log(LOG_ERROR,
+				"Failed to find session name: %s", error.message);
+		goto cleanup;
+	}
 
-	ret = sd_bus_match_signal(bus, NULL, "org.freedesktop.login1",
+	ret = sd_bus_message_read(msg, "o", &session_name_tmp);
+	if (ret < 0) {
+		swayidle_log(LOG_ERROR,
+				"Failed to read session name\n");
+		goto cleanup;
+	}
+	session_name = strdup(session_name_tmp);
+cleanup:
+	sd_bus_error_free(&error);
+	sd_bus_message_unref(msg);
+}
+
+static void setup_sleep_listener(void) {
+	int ret = sd_bus_match_signal(bus, NULL, "org.freedesktop.login1",
                 "/org/freedesktop/login1", "org.freedesktop.login1.Manager",
                 "PrepareForSleep", prepare_for_sleep, NULL);
 	if (ret < 0) {
 		errno = -ret;
-		swayidle_log_errno(LOG_ERROR, "Failed to add D-Bus signal match");
+		swayidle_log_errno(LOG_ERROR, "Failed to add D-Bus signal match : sleep");
 		return;
 	}
 	acquire_sleep_lock();
+}
 
-	struct wl_event_source *source = wl_event_loop_add_fd(state.event_loop,
-		sd_bus_get_fd(bus), WL_EVENT_READABLE, dbus_event, bus);
-	wl_event_source_check(source);
+static void setup_lock_listener(void) {
+	int ret = sd_bus_match_signal(bus, NULL, "org.freedesktop.login1",
+                session_name, "org.freedesktop.login1.Session",
+                "Lock", handle_lock, NULL);
+	if (ret < 0) {
+		errno = -ret;
+		swayidle_log_errno(LOG_ERROR, "Failed to add D-Bus signal match : lock");
+		return;
+	}
+}
+
+static void setup_unlock_listener(void) {
+	int ret = sd_bus_match_signal(bus, NULL, "org.freedesktop.login1",
+                session_name, "org.freedesktop.login1.Session",
+                "Unlock", handle_unlock, NULL);
+	if (ret < 0) {
+		errno = -ret;
+		swayidle_log_errno(LOG_ERROR, "Failed to add D-Bus signal match : unlock");
+		return;
+	}
 }
 #endif
 
@@ -381,6 +454,46 @@ static int parse_resume(int argc, char **argv) {
 	return 2;
 }
 
+static int parse_lock(int argc, char **argv) {
+#if !HAVE_SYSTEMD && !HAVE_ELOGIND
+	swayidle_log(LOG_ERROR, "lock not supported: swayidle was compiled"
+			" with neither systemd nor elogind support.");
+	exit(-1);
+#endif
+	if (argc < 2) {
+		swayidle_log(LOG_ERROR, "Too few parameters to lock command. "
+				"Usage: lock <command>");
+		exit(-1);
+	}
+
+	state.logind_lock_cmd = parse_command(argc - 1, &argv[1]);
+	if (state.logind_lock_cmd) {
+		swayidle_log(LOG_DEBUG, "Setup lock hook: %s", state.logind_lock_cmd);
+	}
+
+	return 2;
+}
+
+static int parse_unlock(int argc, char **argv) {
+#if !HAVE_SYSTEMD && !HAVE_ELOGIND
+	swayidle_log(LOG_ERROR, "unlock not supported: swayidle was compiled"
+			" with neither systemd nor elogind support.");
+	exit(-1);
+#endif
+	if (argc < 2) {
+		swayidle_log(LOG_ERROR, "Too few parameters to unlock command. "
+				"Usage: unlock <command>");
+		exit(-1);
+	}
+
+	state.logind_unlock_cmd = parse_command(argc - 1, &argv[1]);
+	if (state.logind_unlock_cmd) {
+		swayidle_log(LOG_DEBUG, "Setup unlock hook: %s", state.logind_unlock_cmd);
+	}
+
+	return 2;
+}
+
 static int parse_args(int argc, char *argv[]) {
 	int c;
 	while ((c = getopt(argc, argv, "hdw")) != -1) {
@@ -416,6 +529,12 @@ static int parse_args(int argc, char *argv[]) {
 		} else if (!strcmp("after-resume", argv[i])) {
 			swayidle_log(LOG_DEBUG, "Got after-resume");
 			i += parse_resume(argc - i, &argv[i]);
+		} else if (!strcmp("lock", argv[i])) {
+			swayidle_log(LOG_DEBUG, "Got lock");
+			i += parse_lock(argc - i, &argv[i]);
+		} else if (!strcmp("unlock", argv[i])) {
+			swayidle_log(LOG_DEBUG, "Got unlock");
+			i += parse_unlock(argc - i, &argv[i]);
 		} else {
 			swayidle_log(LOG_ERROR, "Unsupported command '%s'", argv[i]);
 			return 1;
@@ -501,9 +620,18 @@ int main(int argc, char *argv[]) {
 
 	bool should_run = !wl_list_empty(&state.timeout_cmds);
 #if HAVE_SYSTEMD || HAVE_ELOGIND
+	connect_to_bus();
 	if (state.before_sleep_cmd || state.after_resume_cmd) {
 		should_run = true;
 		setup_sleep_listener();
+	}
+	if (state.logind_lock_cmd) {
+		should_run = true;
+		setup_lock_listener();
+	}
+	if (state.logind_unlock_cmd) {
+		should_run = true;
+		setup_unlock_listener();
 	}
 #endif
 	if (!should_run) {

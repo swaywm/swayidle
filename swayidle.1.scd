@@ -50,6 +50,14 @@ Sending SIGUSR1 to swayidle will immediately enter idle state.
 	If built with systemd support, executes _command_ after logind signals that the
 	computer resumed from sleep.
 
+*lock* <command>
+	If built with systemd support, executes _command_ when logind signals that the
+	session should be locked
+
+*unlock* <command>
+	If built with systemd support, executes _command_ when logind signals that the
+	session should be unlocked
+
 All commands are executed in a shell.
 
 # EXAMPLE
@@ -77,4 +85,4 @@ https://github.com/swaywm/swayidle.
 
 # SEE ALSO
 
-*sway*(5) *swaymsg*(1) *sway-input*(5) *sway-output*(5) *sway-bar*(5)
+*sway*(5) *swaymsg*(1) *sway-input*(5) *sway-output*(5) *sway-bar*(5) *loginctl*(1)
