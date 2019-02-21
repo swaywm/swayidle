@@ -25,6 +25,7 @@
 #endif
 
 static struct org_kde_kwin_idle *idle_manager = NULL;
+static bool disable_idle = false;
 static struct wl_seat *seat = NULL;
 
 struct swayidle_state {
@@ -345,7 +346,10 @@ static void register_timeout(struct swayidle_timeout_cmd *cmd,
 static void handle_idle(void *data, struct org_kde_kwin_idle_timeout *timer) {
 	struct swayidle_timeout_cmd *cmd = data;
 	swayidle_log(LOG_DEBUG, "idle state");
-	if (cmd->idle_cmd) {
+	if(disable_idle) {
+		swayidle_log(LOG_DEBUG, "idle action skipped : globally disabled");
+		org_kde_kwin_idle_timeout_simulate_user_activity(timer);
+	} else if (cmd->idle_cmd) {
 		cmd_exec(cmd->idle_cmd);
 	}
 }
@@ -557,6 +561,10 @@ static int handle_signal(int sig, void *data) {
 			register_timeout(cmd, 0);
 		}
 		return 1;
+	case SIGUSR2:
+		swayidle_log(LOG_DEBUG, "Got SIGUSR2");
+		disable_idle =! disable_idle;
+		return 1;
 	}
 	assert(false); // not reached
 }
@@ -596,6 +604,7 @@ int main(int argc, char *argv[]) {
 	wl_event_loop_add_signal(state.event_loop, SIGINT, handle_signal, NULL);
 	wl_event_loop_add_signal(state.event_loop, SIGTERM, handle_signal, NULL);
 	wl_event_loop_add_signal(state.event_loop, SIGUSR1, handle_signal, NULL);
+	wl_event_loop_add_signal(state.event_loop, SIGUSR2, handle_signal, NULL);
 
 	state.display = wl_display_connect(NULL);
 	if (state.display == NULL) {

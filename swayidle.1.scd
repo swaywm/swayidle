@@ -30,6 +30,9 @@ command line.
 
 Sending SIGUSR1 to swayidle will immediately enter idle state.
 
+Sending SIGUSR2 to swayidle will disable all timer-based triggers. Sending that
+signal again will reenable those triggers.
+
 # EVENTS
 
 *timeout* <timeout> <timeout command> [resume <resume command>]
