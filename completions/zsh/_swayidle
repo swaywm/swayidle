@@ -8,10 +8,11 @@ local events=('timeout:Execute timeout command if there is no activity for timeo
 local resume=('resume:Execute command when there is activity again')
 
 if (($#words <= 2)); then
+	_describe -t "events" 'swayidle' events
 	_arguments -C \
 			   '(-h --help)'{-h,--help}'[Show help message and quit]' \
-			   '(-d)'-d'[Enable debug output]'
-	_describe -t "events" 'swayidle' events
+			   '(-d)'-d'[Enable debug output]' \
+			   '(-w)'-w'[Wait for command to finish executing before continuing]'
 
 elif  [[ "$words[-3]" == before-sleep || "$words[-3]" == resume ]]; then
 	_describe -t "events" 'swayidle' events
