@@ -15,6 +15,7 @@ _swayidle()
   short=(
     -h
     -d
+    -w
   )
 
   if [ "$prev" = timeout ]; then
