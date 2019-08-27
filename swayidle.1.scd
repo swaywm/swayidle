@@ -30,6 +30,8 @@ command line.
 
 Sending SIGUSR1 to swayidle will immediately enter idle state.
 
+Sending SIGUSR2 to swayidle will reset the timers of timeout commands.
+
 # EVENTS
 
 *timeout* <timeout> <timeout command> [resume <resume command>]
