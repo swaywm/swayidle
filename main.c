@@ -566,6 +566,9 @@ static int handle_signal(int sig, void *data) {
 		}
 		return 1;
 	}
+	default:
+		swayidle_log(LOG_DEBUG, "Unhandled signal %s", strsignal(sig));
+	}
 	assert(false); // not reached
 }
 
