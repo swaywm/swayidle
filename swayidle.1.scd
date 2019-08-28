@@ -1,4 +1,4 @@
-swayidle (1)
+swayidle(1)
 
 # NAME
 
