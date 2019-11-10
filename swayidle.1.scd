@@ -58,6 +58,11 @@ Sending SIGUSR1 to swayidle will immediately enter idle state.
 	If built with systemd support, executes _command_ when logind signals that the
 	session should be unlocked
 
+*idlehint* <timeout>
+	If built with systemd support, set IdleHint to indcate an idle logind/elogind
+	session after <timeout> seconds. Adding an idlehint event will also cause
+	swayidle to call SetIdleHint(false) when run, on resume, unlock, etc.
+
 All commands are executed in a shell.
 
 # EXAMPLE

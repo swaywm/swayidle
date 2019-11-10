@@ -35,6 +35,7 @@ struct swayidle_state {
 	char *after_resume_cmd;
 	char *logind_lock_cmd;
 	char *logind_unlock_cmd;
+	bool logind_idlehint;
 	bool wait;
 } state;
 
@@ -44,6 +45,7 @@ struct swayidle_timeout_cmd {
 	struct org_kde_kwin_idle_timeout *idle_timer;
 	char *idle_cmd;
 	char *resume_cmd;
+	bool idlehint;
 };
 
 enum log_importance {
@@ -149,6 +151,22 @@ cleanup:
 	sd_bus_message_unref(msg);
 }
 
+static void set_idle_hint(bool hint) {
+	swayidle_log(LOG_DEBUG, "SetIdleHint %d", hint);
+	sd_bus_message *msg = NULL;
+	sd_bus_error error = SD_BUS_ERROR_NULL;
+	int ret = sd_bus_call_method(bus, "org.freedesktop.login1",
+			session_name, "org.freedesktop.login1.Session", "SetIdleHint",
+			&error, &msg, "b", hint);
+	if (ret < 0) {
+		swayidle_log(LOG_ERROR,
+				"Failed to send SetIdleHint signal: %s", error.message);
+	}
+
+	sd_bus_error_free(&error);
+	sd_bus_message_unref(msg);
+}
+
 static int prepare_for_sleep(sd_bus_message *msg, void *userdata,
 		sd_bus_error *ret_error) {
 	/* "b" apparently reads into an int, not a bool */
@@ -164,6 +182,9 @@ static int prepare_for_sleep(sd_bus_message *msg, void *userdata,
 		acquire_sleep_lock();
 		if (state.after_resume_cmd) {
 			cmd_exec(state.after_resume_cmd);
+		}
+		if (state.logind_idlehint) {
+			set_idle_hint(false);
 		}
 		return 0;
 	}
@@ -197,6 +218,9 @@ static int handle_unlock(sd_bus_message *msg, void *userdata,
 		sd_bus_error *ret_error) {
 	swayidle_log(LOG_DEBUG, "Unlock signal received");
 
+	if (state.logind_idlehint) {
+		set_idle_hint(false);
+	}
 	if (state.logind_unlock_cmd) {
 		cmd_exec(state.logind_unlock_cmd);
 	}
@@ -345,6 +369,11 @@ static void register_timeout(struct swayidle_timeout_cmd *cmd,
 static void handle_idle(void *data, struct org_kde_kwin_idle_timeout *timer) {
 	struct swayidle_timeout_cmd *cmd = data;
 	swayidle_log(LOG_DEBUG, "idle state");
+#if HAVE_SYSTEMD || HAVE_ELOGIND
+	if (cmd->idlehint) {
+		set_idle_hint(true);
+	} else
+#endif
 	if (cmd->idle_cmd) {
 		cmd_exec(cmd->idle_cmd);
 	}
@@ -356,6 +385,11 @@ static void handle_resume(void *data, struct org_kde_kwin_idle_timeout *timer) {
 	if (cmd->registered_timeout != cmd->timeout) {
 		register_timeout(cmd, cmd->timeout);
 	}
+#if HAVE_SYSTEMD || HAVE_ELOGIND
+	if (cmd->idlehint) {
+		set_idle_hint(false);
+	} else
+#endif
 	if (cmd->resume_cmd) {
 		cmd_exec(cmd->resume_cmd);
 	}
@@ -376,29 +410,37 @@ static char *parse_command(int argc, char **argv) {
 	return strdup(argv[0]);
 }
 
-static int parse_timeout(int argc, char **argv) {
-	if (argc < 3) {
-		swayidle_log(LOG_ERROR, "Too few parameters to timeout command. "
-				"Usage: timeout <seconds> <command>");
-		exit(-1);
-	}
+static struct swayidle_timeout_cmd *build_timeout_cmd(int argc, char **argv) {
 	errno = 0;
 	char *endptr;
 	int seconds = strtoul(argv[1], &endptr, 10);
 	if (errno != 0 || *endptr != '\0') {
-		swayidle_log(LOG_ERROR, "Invalid timeout parameter '%s', it should be a "
-				"numeric value representing seconds", optarg);
+		swayidle_log(LOG_ERROR, "Invalid %s parameter '%s', it should be a "
+				"numeric value representing seconds", argv[0], argv[1]);
 		exit(-1);
 	}
 
 	struct swayidle_timeout_cmd *cmd =
 		calloc(1, sizeof(struct swayidle_timeout_cmd));
+	cmd->idlehint = false;
 
 	if (seconds > 0) {
 		cmd->timeout = seconds * 1000;
 	} else {
 		cmd->timeout = -1;
 	}
+
+	return cmd;
+}
+
+static int parse_timeout(int argc, char **argv) {
+	if (argc < 3) {
+		swayidle_log(LOG_ERROR, "Too few parameters to timeout command. "
+				"Usage: timeout <seconds> <command>");
+		exit(-1);
+	}
+
+	struct swayidle_timeout_cmd *cmd = build_timeout_cmd(argc, argv);
 
 	swayidle_log(LOG_DEBUG, "Register idle timeout at %d ms", cmd->timeout);
 	swayidle_log(LOG_DEBUG, "Setup idle");
@@ -416,8 +458,8 @@ static int parse_timeout(int argc, char **argv) {
 
 static int parse_sleep(int argc, char **argv) {
 #if !HAVE_SYSTEMD && !HAVE_ELOGIND
-	swayidle_log(LOG_ERROR, "before-sleep not supported: swayidle was compiled "
-		       "with neither systemd nor elogind support.");
+	swayidle_log(LOG_ERROR, "%s not supported: swayidle was compiled "
+		       "with neither systemd nor elogind support.", "before-sleep");
 	exit(-1);
 #endif
 	if (argc < 2) {
@@ -436,8 +478,8 @@ static int parse_sleep(int argc, char **argv) {
 
 static int parse_resume(int argc, char **argv) {
 #if !HAVE_SYSTEMD && !HAVE_ELOGIND
-	swayidle_log(LOG_ERROR, "after-resume not supported: swayidle was compiled "
-			"with neither systemd nor elogind support.");
+	swayidle_log(LOG_ERROR, "%s not supported: swayidle was compiled "
+			"with neither systemd nor elogind support.", "after-resume");
 	exit(-1);
 #endif
 	if (argc < 2) {
@@ -456,8 +498,8 @@ static int parse_resume(int argc, char **argv) {
 
 static int parse_lock(int argc, char **argv) {
 #if !HAVE_SYSTEMD && !HAVE_ELOGIND
-	swayidle_log(LOG_ERROR, "lock not supported: swayidle was compiled"
-			" with neither systemd nor elogind support.");
+	swayidle_log(LOG_ERROR, "%s not supported: swayidle was compiled"
+			" with neither systemd nor elogind support.", "lock");
 	exit(-1);
 #endif
 	if (argc < 2) {
@@ -476,8 +518,8 @@ static int parse_lock(int argc, char **argv) {
 
 static int parse_unlock(int argc, char **argv) {
 #if !HAVE_SYSTEMD && !HAVE_ELOGIND
-	swayidle_log(LOG_ERROR, "unlock not supported: swayidle was compiled"
-			" with neither systemd nor elogind support.");
+	swayidle_log(LOG_ERROR, "%s not supported: swayidle was compiled"
+			" with neither systemd nor elogind support.", "unlock");
 	exit(-1);
 #endif
 	if (argc < 2) {
@@ -491,6 +533,31 @@ static int parse_unlock(int argc, char **argv) {
 		swayidle_log(LOG_DEBUG, "Setup unlock hook: %s", state.logind_unlock_cmd);
 	}
 
+	return 2;
+}
+
+static int parse_idlehint(int argc, char **argv) {
+#if !HAVE_SYSTEMD && !HAVE_ELOGIND
+	swayidle_log(LOG_ERROR, "%s not supported: swayidle was compiled"
+			" with neither systemd nor elogind support.", "idlehint");
+	exit(-1);
+#endif
+	if (state.logind_idlehint) {
+		swayidle_log(LOG_ERROR, "Cannot add multiple idlehint events");
+		exit(-1);
+	}
+	if (argc < 2) {
+		swayidle_log(LOG_ERROR, "Too few parameters to idlehint command. "
+				"Usage: idlehint <seconds>");
+		exit(-1);
+	}
+
+	struct swayidle_timeout_cmd *cmd = build_timeout_cmd(argc, argv);
+	cmd->idlehint = true;
+
+	swayidle_log(LOG_DEBUG, "Register idlehint timeout at %d ms", cmd->timeout);
+	wl_list_insert(&state.timeout_cmds, &cmd->link);
+	state.logind_idlehint = true;
 	return 2;
 }
 
@@ -535,6 +602,9 @@ static int parse_args(int argc, char *argv[]) {
 		} else if (!strcmp("unlock", argv[i])) {
 			swayidle_log(LOG_DEBUG, "Got unlock");
 			i += parse_unlock(argc - i, &argv[i]);
+		} else if (!strcmp("idlehint", argv[i])) {
+			swayidle_log(LOG_DEBUG, "Got idlehint");
+			i += parse_idlehint(argc - i, &argv[i]);
 		} else {
 			swayidle_log(LOG_ERROR, "Unsupported command '%s'", argv[i]);
 			return 1;
@@ -632,6 +702,9 @@ int main(int argc, char *argv[]) {
 	if (state.logind_unlock_cmd) {
 		should_run = true;
 		setup_unlock_listener();
+	}
+	if (state.logind_idlehint) {
+		set_idle_hint(false);
 	}
 #endif
 	if (!should_run) {
