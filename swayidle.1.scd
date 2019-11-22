@@ -33,10 +33,6 @@ swayidle listens for idle activity on your Wayland compositor and executes tasks
 on various idle-related events. You can specify any number of events at the
 command line and in the config file.
 
-Sending SIGUSR1 to swayidle will immediately enter idle state.
-
-When SIGTERM is received swayidle will run all pending resume commands. When finished it will terminate.
-
 # EVENTS
 
 *timeout* <timeout> <timeout command> [resume <resume command>]
@@ -71,6 +67,16 @@ When SIGTERM is received swayidle will run all pending resume commands. When fin
 	swayidle to call SetIdleHint(false) when run, on resume, unlock, etc.
 
 All commands are executed in a shell.
+
+# SIGNALS
+
+swayidle responds to the following signals:
+
+*SIGTERM, SIGINT*
+	Run all pending resume commands. When finished swayidle will terminate.
+
+*SIGUSR1*
+	Immediately enter idle state.
 
 # EXAMPLE
 

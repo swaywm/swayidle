@@ -36,6 +36,7 @@ struct swayidle_state {
 	char *logind_lock_cmd;
 	char *logind_unlock_cmd;
 	bool logind_idlehint;
+	bool timeouts_enabled;
 	bool wait;
 } state;
 
@@ -132,39 +133,47 @@ static void cmd_exec(char *param) {
 }
 
 #if HAVE_SYSTEMD || HAVE_ELOGIND
-static int lock_fd = -1;
+#define DBUS_LOGIND_SERVICE "org.freedesktop.login1"
+#define DBUS_LOGIND_PATH "/org/freedesktop/login1"
+#define DBUS_LOGIND_MANAGER_INTERFACE "org.freedesktop.login1.Manager"
+#define DBUS_LOGIND_SESSION_INTERFACE "org.freedesktop.login1.Session"
+
+static void enable_timeouts(void);
+static void disable_timeouts(void);
+
+static int sleep_lock_fd = -1;
 static struct sd_bus *bus = NULL;
 static char *session_name = NULL;
 
-static void acquire_sleep_lock(void) {
+static void acquire_inhibitor_lock(const char *type, const char *mode,
+	int *fd) {
 	sd_bus_message *msg = NULL;
 	sd_bus_error error = SD_BUS_ERROR_NULL;
-	int ret = sd_bus_call_method(bus, "org.freedesktop.login1",
-			"/org/freedesktop/login1",
-			"org.freedesktop.login1.Manager", "Inhibit",
-			&error, &msg, "ssss", "sleep", "swayidle",
-			"Setup Up Lock Screen", "delay");
+	char why[35];
+
+	sprintf(why, "Swayidle is preventing %s", type);
+	int ret = sd_bus_call_method(bus, DBUS_LOGIND_SERVICE, DBUS_LOGIND_PATH,
+			DBUS_LOGIND_MANAGER_INTERFACE, "Inhibit", &error, &msg,
+			"ssss", type, "swayidle", why, mode);
 	if (ret < 0) {
 		swayidle_log(LOG_ERROR,
-				"Failed to send Inhibit signal: %s", error.message);
+				"Failed to send %s inhibit signal: %s", type, error.message);
 		goto cleanup;
 	}
 
-	ret = sd_bus_message_read(msg, "h", &lock_fd);
+	ret = sd_bus_message_read(msg, "h", fd);
 	if (ret < 0) {
 		errno = -ret;
 		swayidle_log_errno(LOG_ERROR,
-				"Failed to parse D-Bus response for Inhibit");
+				"Failed to parse D-Bus response for %s inhibit", type);
 		goto cleanup;
 	}
 
-	// sd_bus_message_unref closes the file descriptor so we need
-	// to copy it beforehand
-	lock_fd = fcntl(lock_fd, F_DUPFD_CLOEXEC, 3);
-	if (lock_fd >= 0) {
-		swayidle_log(LOG_INFO, "Got sleep lock: %d", lock_fd);
+	*fd = fcntl(*fd, F_DUPFD_CLOEXEC, 3);
+	if (*fd >= 0) {
+		swayidle_log(LOG_DEBUG, "Got %s lock: %d", type, *fd);
 	} else {
-		swayidle_log_errno(LOG_ERROR, "Failed to copy sleep lock fd");
+		swayidle_log_errno(LOG_ERROR, "Failed to copy %s lock fd", type);
 	}
 
 cleanup:
@@ -172,12 +181,20 @@ cleanup:
 	sd_bus_message_unref(msg);
 }
 
+static void release_inhibitor_lock(int fd) {
+	if (fd >= 0) {
+		swayidle_log(LOG_DEBUG, "Releasing inhibitor lock %d", fd);
+		close(fd);
+	}
+	fd = -1;
+}
+
 static void set_idle_hint(bool hint) {
 	swayidle_log(LOG_DEBUG, "SetIdleHint %d", hint);
 	sd_bus_message *msg = NULL;
 	sd_bus_error error = SD_BUS_ERROR_NULL;
-	int ret = sd_bus_call_method(bus, "org.freedesktop.login1",
-			session_name, "org.freedesktop.login1.Session", "SetIdleHint",
+	int ret = sd_bus_call_method(bus, DBUS_LOGIND_SERVICE,
+			session_name, DBUS_LOGIND_SESSION_INTERFACE, "SetIdleHint",
 			&error, &msg, "b", hint);
 	if (ret < 0) {
 		swayidle_log(LOG_ERROR,
@@ -186,6 +203,31 @@ static void set_idle_hint(bool hint) {
 
 	sd_bus_error_free(&error);
 	sd_bus_message_unref(msg);
+}
+
+static bool get_logind_idle_inhibit(void) {
+	const char *locks;
+	sd_bus_message *reply = NULL;
+
+	int ret = sd_bus_get_property(bus, DBUS_LOGIND_SERVICE, DBUS_LOGIND_PATH,
+			DBUS_LOGIND_MANAGER_INTERFACE, "BlockInhibited", NULL, &reply, "s");
+	if (ret < 0) {
+		goto error;
+	}
+
+	ret = sd_bus_message_read_basic(reply, 's', &locks);
+	if (ret < 0) {
+		goto error;
+	}
+	sd_bus_message_unref(reply);
+	return strstr(locks, "idle") != NULL;
+
+error:
+	sd_bus_message_unref(reply);
+	errno = -ret;
+	swayidle_log_errno(LOG_ERROR,
+				"Failed to parse get BlockInhibited property");
+	return false;
 }
 
 static int prepare_for_sleep(sd_bus_message *msg, void *userdata,
@@ -200,7 +242,7 @@ static int prepare_for_sleep(sd_bus_message *msg, void *userdata,
 	}
 	swayidle_log(LOG_DEBUG, "PrepareForSleep signal received %d", going_down);
 	if (!going_down) {
-		acquire_sleep_lock();
+		acquire_inhibitor_lock("sleep", "delay", &sleep_lock_fd);
 		if (state.after_resume_cmd) {
 			cmd_exec(state.after_resume_cmd);
 		}
@@ -215,14 +257,10 @@ static int prepare_for_sleep(sd_bus_message *msg, void *userdata,
 	}
 	swayidle_log(LOG_DEBUG, "Prepare for sleep done");
 
-	swayidle_log(LOG_INFO, "Releasing sleep lock %d", lock_fd);
-	if (lock_fd >= 0) {
-		close(lock_fd);
-	}
-	lock_fd = -1;
-
+	release_inhibitor_lock(sleep_lock_fd);
 	return 0;
 }
+
 static int handle_lock(sd_bus_message *msg, void *userdata,
 		sd_bus_error *ret_error) {
 	swayidle_log(LOG_DEBUG, "Lock signal received");
@@ -247,6 +285,54 @@ static int handle_unlock(sd_bus_message *msg, void *userdata,
 	}
 	swayidle_log(LOG_DEBUG, "Unlock command done");
 
+	return 0;
+}
+
+static int handle_property_changed(sd_bus_message *msg, void *userdata,
+		sd_bus_error *ret_error) {
+	const char *name;
+	swayidle_log(LOG_DEBUG, "PropertiesChanged signal received");
+
+	int ret = sd_bus_message_read_basic(msg, 's', &name);
+	if (ret < 0) {
+		goto error;
+	}
+
+	if (!strcmp(name, DBUS_LOGIND_MANAGER_INTERFACE)) {
+		swayidle_log(LOG_DEBUG, "Got PropertyChanged: %s", name);
+		ret = sd_bus_message_enter_container(msg, 'a', "{sv}");
+		if (ret < 0) {
+			goto error;
+		}
+
+		const char *prop;
+		while ((ret = sd_bus_message_enter_container(msg, 'e', "sv")) > 0) {
+			ret = sd_bus_message_read_basic(msg, 's', &prop);
+			if (ret < 0) {
+				goto error;
+			}
+
+			if (!strcmp(prop, "BlockInhibited")) {
+				if (get_logind_idle_inhibit()) {
+					swayidle_log(LOG_DEBUG, "Logind idle inhibitor found");
+					disable_timeouts();
+				} else {
+					swayidle_log(LOG_DEBUG, "Logind idle inhibitor not found");
+					enable_timeouts();
+				}
+				return 0;
+			} else {
+				sd_bus_message_skip(msg, "{sv}");
+			}
+		}
+	}
+
+	return 0;
+
+error:
+	errno = -ret;
+	swayidle_log_errno(LOG_ERROR,
+				"Failed to parse D-Bus response for PropertyChanged");
 	return 0;
 }
 
@@ -276,24 +362,13 @@ static int dbus_event(int fd, uint32_t mask, void *data) {
 	return count;
 }
 
-static void connect_to_bus(void) {
-	int ret = sd_bus_default_system(&bus);
+static void set_session(void) {
 	sd_bus_message *msg = NULL;
 	sd_bus_error error = SD_BUS_ERROR_NULL;
-	pid_t my_pid = getpid();
 	const char *session_name_tmp;
-	if (ret < 0) {
-		errno = -ret;
-		swayidle_log_errno(LOG_ERROR, "Failed to open D-Bus connection");
-		return;
-	}
-	struct wl_event_source *source = wl_event_loop_add_fd(state.event_loop,
-		sd_bus_get_fd(bus), WL_EVENT_READABLE, dbus_event, bus);
-	wl_event_source_check(source);
 
-	ret = sd_bus_call_method(bus, "org.freedesktop.login1",
-			"/org/freedesktop/login1",
-			"org.freedesktop.login1.Manager", "GetSession",
+	int ret = sd_bus_call_method(bus, DBUS_LOGIND_SERVICE, DBUS_LOGIND_PATH,
+			DBUS_LOGIND_MANAGER_INTERFACE, "GetSession",
 			&error, &msg, "s", "auto");
 	if (ret < 0) {
 		swayidle_log(LOG_DEBUG,
@@ -301,10 +376,9 @@ static void connect_to_bus(void) {
 		sd_bus_error_free(&error);
 		sd_bus_message_unref(msg);
 
-		ret = sd_bus_call_method(bus, "org.freedesktop.login1",
-				"/org/freedesktop/login1",
-				"org.freedesktop.login1.Manager", "GetSessionByPID",
-				&error, &msg, "u", my_pid);
+		ret = sd_bus_call_method(bus, DBUS_LOGIND_SERVICE, DBUS_LOGIND_PATH,
+				DBUS_LOGIND_MANAGER_INTERFACE, "GetSessionByPID",
+				&error, &msg, "u", getpid());
 		if (ret < 0) {
 			swayidle_log(LOG_DEBUG,
 					"GetSessionByPID failed: %s", error.message);
@@ -317,7 +391,7 @@ static void connect_to_bus(void) {
 	ret = sd_bus_message_read(msg, "o", &session_name_tmp);
 	if (ret < 0) {
 		swayidle_log(LOG_ERROR,
-				"Failed to read session name\n");
+				"Failed to read session name");
 		goto cleanup;
 	}
 	session_name = strdup(session_name_tmp);
@@ -328,21 +402,34 @@ cleanup:
 	sd_bus_message_unref(msg);
 }
 
+static void connect_to_bus(void) {
+	int ret = sd_bus_default_system(&bus);
+	if (ret < 0) {
+		errno = -ret;
+		swayidle_log_errno(LOG_ERROR, "Failed to open D-Bus connection");
+		return;
+	}
+	struct wl_event_source *source = wl_event_loop_add_fd(state.event_loop,
+		sd_bus_get_fd(bus), WL_EVENT_READABLE, dbus_event, bus);
+	wl_event_source_check(source);
+	set_session();
+}
+
 static void setup_sleep_listener(void) {
-	int ret = sd_bus_match_signal(bus, NULL, "org.freedesktop.login1",
-                "/org/freedesktop/login1", "org.freedesktop.login1.Manager",
+	int ret = sd_bus_match_signal(bus, NULL, DBUS_LOGIND_SERVICE,
+                DBUS_LOGIND_PATH, DBUS_LOGIND_MANAGER_INTERFACE,
                 "PrepareForSleep", prepare_for_sleep, NULL);
 	if (ret < 0) {
 		errno = -ret;
 		swayidle_log_errno(LOG_ERROR, "Failed to add D-Bus signal match : sleep");
 		return;
 	}
-	acquire_sleep_lock();
+	acquire_inhibitor_lock("sleep", "delay", &sleep_lock_fd);
 }
 
 static void setup_lock_listener(void) {
-	int ret = sd_bus_match_signal(bus, NULL, "org.freedesktop.login1",
-                session_name, "org.freedesktop.login1.Session",
+	int ret = sd_bus_match_signal(bus, NULL, DBUS_LOGIND_SERVICE,
+                session_name, DBUS_LOGIND_SESSION_INTERFACE,
                 "Lock", handle_lock, NULL);
 	if (ret < 0) {
 		errno = -ret;
@@ -352,12 +439,23 @@ static void setup_lock_listener(void) {
 }
 
 static void setup_unlock_listener(void) {
-	int ret = sd_bus_match_signal(bus, NULL, "org.freedesktop.login1",
-                session_name, "org.freedesktop.login1.Session",
+	int ret = sd_bus_match_signal(bus, NULL, DBUS_LOGIND_SERVICE,
+                session_name, DBUS_LOGIND_SESSION_INTERFACE,
                 "Unlock", handle_unlock, NULL);
 	if (ret < 0) {
 		errno = -ret;
 		swayidle_log_errno(LOG_ERROR, "Failed to add D-Bus signal match : unlock");
+		return;
+	}
+}
+
+static void setup_property_changed_listener(void) {
+	int ret = sd_bus_match_signal(bus, NULL, NULL,
+                DBUS_LOGIND_PATH, "org.freedesktop.DBus.Properties",
+                "PropertiesChanged", handle_property_changed, NULL);
+	if (ret < 0) {
+		errno = -ret;
+		swayidle_log_errno(LOG_ERROR, "Failed to add D-Bus signal match : property changed");
 		return;
 	}
 }
@@ -385,12 +483,17 @@ static const struct wl_registry_listener registry_listener = {
 
 static const struct org_kde_kwin_idle_timeout_listener idle_timer_listener;
 
-static void register_timeout(struct swayidle_timeout_cmd *cmd,
-		int timeout) {
+static void destroy_cmd_timer(struct swayidle_timeout_cmd *cmd) {
 	if (cmd->idle_timer != NULL) {
 		org_kde_kwin_idle_timeout_destroy(cmd->idle_timer);
 		cmd->idle_timer = NULL;
 	}
+}
+
+static void register_timeout(struct swayidle_timeout_cmd *cmd,
+		int timeout) {
+	destroy_cmd_timer(cmd);
+
 	if (timeout < 0) {
 		swayidle_log(LOG_DEBUG, "Not registering idle timeout");
 		return;
@@ -402,6 +505,43 @@ static void register_timeout(struct swayidle_timeout_cmd *cmd,
 		&idle_timer_listener, cmd);
 	cmd->registered_timeout = timeout;
 }
+
+static void enable_timeouts(void) {
+	if (state.timeouts_enabled) {
+		return;
+	}
+#if HAVE_SYSTEMD || HAVE_ELOGIND
+	if (get_logind_idle_inhibit()) {
+		swayidle_log(LOG_INFO, "Not enabling timeouts: idle inhibitor found");
+		return;
+	}
+#endif
+	swayidle_log(LOG_DEBUG, "Enable idle timeouts");
+
+	state.timeouts_enabled = true;
+	struct swayidle_timeout_cmd *cmd;
+	wl_list_for_each(cmd, &state.timeout_cmds, link) {
+		register_timeout(cmd, cmd->timeout);
+	}
+}
+
+#if HAVE_SYSTEMD || HAVE_ELOGIND
+static void disable_timeouts(void) {
+	if (!state.timeouts_enabled) {
+		return;
+	}
+	swayidle_log(LOG_DEBUG, "Disable idle timeouts");
+
+	state.timeouts_enabled = false;
+	struct swayidle_timeout_cmd *cmd;
+	wl_list_for_each(cmd, &state.timeout_cmds, link) {
+		destroy_cmd_timer(cmd);
+	}
+	if (state.logind_idlehint) {
+		set_idle_hint(false);
+	}
+}
+#endif
 
 static void handle_idle(void *data, struct org_kde_kwin_idle_timeout *timer) {
 	struct swayidle_timeout_cmd *cmd = data;
@@ -844,6 +984,7 @@ int main(int argc, char *argv[]) {
 	bool should_run = !wl_list_empty(&state.timeout_cmds);
 #if HAVE_SYSTEMD || HAVE_ELOGIND
 	connect_to_bus();
+	setup_property_changed_listener();
 	if (state.before_sleep_cmd || state.after_resume_cmd) {
 		should_run = true;
 		setup_sleep_listener();
@@ -865,11 +1006,7 @@ int main(int argc, char *argv[]) {
 		sway_terminate(0);
 	}
 
-	struct swayidle_timeout_cmd *cmd;
-	wl_list_for_each(cmd, &state.timeout_cmds, link) {
-		register_timeout(cmd, cmd->timeout);
-	}
-
+	enable_timeouts();
 	wl_display_roundtrip(state.display);
 
 	struct wl_event_source *source = wl_event_loop_add_fd(state.event_loop,
