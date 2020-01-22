@@ -24,6 +24,8 @@ add_project_arguments(
 wayland_client = dependency('wayland-client')
 wayland_protos = dependency('wayland-protocols', version: '>=1.14')
 wayland_server = dependency('wayland-server')
+bash_comp      = dependency('bash-completion', required: false)
+fish_comp      = dependency('fish', required: false)
 logind = dependency('lib' + get_option('logind-provider'), required: get_option('logind'))
 
 scdoc = find_program('scdoc', required: get_option('man-pages'))
@@ -127,7 +129,11 @@ if get_option('bash-completions')
 	bash_files = files(
 		'completions/bash/swayidle',
 	)
-	bash_install_dir = datadir + '/bash-completion/completions'
+	if bash_comp.found()
+		bash_install_dir = bash_comp.get_pkgconfig_variable('completionsdir')
+	else
+		bash_install_dir = datadir + '/bash-completion/completions'
+	endif
 
 	install_data(bash_files, install_dir: bash_install_dir)
 endif
@@ -136,7 +142,11 @@ if get_option('fish-completions')
 	fish_files = files(
 		'completions/fish/swayidle.fish',
 	)
-	fish_install_dir = datadir + '/fish/completions'
+	if fish_comp.found()
+		fish_install_dir = fish_comp.get_pkgconfig_variable('completionsdir')
+	else
+		fish_install_dir = datadir + '/fish/completions'
+	endif
 
 	install_data(fish_files, install_dir: fish_install_dir)
 endif
