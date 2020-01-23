@@ -1,7 +1,7 @@
 project(
 	'swayidle',
 	'c',
-	version: '1.5',
+	version: '1.7',
 	license: 'MIT',
 	meson_version: '>=0.48.0',
 	default_options: [
