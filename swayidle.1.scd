@@ -30,6 +30,8 @@ command line.
 
 Sending SIGUSR1 to swayidle will immediately enter idle state.
 
+When SIGTERM is received swayidle will run all pending resume commands. When finished it will terminate.
+
 # EVENTS
 
 *timeout* <timeout> <timeout command> [resume <resume command>]
