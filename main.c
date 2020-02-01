@@ -46,6 +46,7 @@ struct swayidle_timeout_cmd {
 	char *idle_cmd;
 	char *resume_cmd;
 	bool idlehint;
+	bool resume_pending;
 };
 
 enum log_importance {
@@ -368,6 +369,7 @@ static void register_timeout(struct swayidle_timeout_cmd *cmd,
 
 static void handle_idle(void *data, struct org_kde_kwin_idle_timeout *timer) {
 	struct swayidle_timeout_cmd *cmd = data;
+	cmd->resume_pending = true;
 	swayidle_log(LOG_DEBUG, "idle state");
 #if HAVE_SYSTEMD || HAVE_ELOGIND
 	if (cmd->idlehint) {
@@ -381,6 +383,7 @@ static void handle_idle(void *data, struct org_kde_kwin_idle_timeout *timer) {
 
 static void handle_resume(void *data, struct org_kde_kwin_idle_timeout *timer) {
 	struct swayidle_timeout_cmd *cmd = data;
+	cmd->resume_pending = false;
 	swayidle_log(LOG_DEBUG, "active state");
 	if (cmd->registered_timeout != cmd->timeout) {
 		register_timeout(cmd, cmd->timeout);
@@ -423,6 +426,7 @@ static struct swayidle_timeout_cmd *build_timeout_cmd(int argc, char **argv) {
 	struct swayidle_timeout_cmd *cmd =
 		calloc(1, sizeof(struct swayidle_timeout_cmd));
 	cmd->idlehint = false;
+	cmd->resume_pending = false;
 
 	if (seconds > 0) {
 		cmd->timeout = seconds * 1000;
@@ -615,14 +619,20 @@ static int parse_args(int argc, char *argv[]) {
 }
 
 static int handle_signal(int sig, void *data) {
+	struct swayidle_timeout_cmd *cmd;
 	switch (sig) {
 	case SIGINT:
 	case SIGTERM:
+		swayidle_log(LOG_DEBUG, "Got SIGTERM");
+		wl_list_for_each(cmd, &state.timeout_cmds, link) {
+			if (cmd->resume_pending) {
+				handle_resume(cmd, cmd->idle_timer);
+			}
+		}
 		sway_terminate(0);
 		return 0;
 	case SIGUSR1:
 		swayidle_log(LOG_DEBUG, "Got SIGUSR1");
-		struct swayidle_timeout_cmd *cmd;
 		wl_list_for_each(cmd, &state.timeout_cmds, link) {
 			register_timeout(cmd, 0);
 		}
