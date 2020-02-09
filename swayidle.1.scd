@@ -10,13 +10,13 @@ swayidle - Idle manager for Wayland
 
 # OPTIONS
 
-*-h*
+*-h*, *--help*
 	Show help message and quit.
 
-*-d*
+*-d*, *--debug*
 	Enable debug output.
 
-*-w*
+*-w*, *--wait*
 	Wait for command to finish executing before continuing, helpful for ensuring
 	that a *before-sleep* command has finished before the system goes to sleep.
 

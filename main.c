@@ -566,25 +566,41 @@ static int parse_idlehint(int argc, char **argv) {
 }
 
 static int parse_args(int argc, char *argv[]) {
+	static struct option long_options[] = {
+		{"debug", no_argument, NULL, 'd'},
+		{"help", no_argument, NULL, 'h'},
+		{"wait", no_argument, NULL, 'w'},
+		{0,0,0,0} // Terminator
+	};
+
+	static char *usage[] = {
+		"Usage: swayidle [OPTIONS]\n",
+		"  -h, --help\tthis help menu\n",
+		"  -d, --debug\tdebug\n",
+		"  -w, --wait\twait for command to finish\n",
+	};
+
+
 	int c;
-	while ((c = getopt(argc, argv, "hdw")) != -1) {
+	int opt_idx = 0;
+	while ((c = getopt_long(argc, argv, "dhw", long_options, &opt_idx)) != -1) {
 		switch (c) {
-		case 'd':
-			verbosity = LOG_DEBUG;
-			break;
-		case 'w':
-			state.wait = true;
-			break;
-		case 'h':
-		case '?':
-			printf("Usage: %s [OPTIONS]\n", argv[0]);
-			printf("  -h\tthis help menu\n");
-			printf("  -d\tdebug\n");
-			printf("  -w\twait for command to finish\n");
-			return 1;
-		default:
-			return 1;
-		}
+			case 'd':
+				verbosity = LOG_DEBUG;
+				break;
+			case 'w':
+				state.wait = true;
+				break;
+			case 'h':
+			case '?':
+				for (size_t i = 0; i < sizeof(usage) / sizeof(char *); ++i) {
+					printf("%s", usage[i]);
+				}
+				return 1;
+			default:
+				return 1;
+
+		};
 	}
 
 	wl_list_init(&state.timeout_cmds);
