@@ -13,6 +13,7 @@
 #include <wayland-client.h>
 #include <wayland-server.h>
 #include <wayland-util.h>
+#include <wordexp.h>
 #include "config.h"
 #include "idle-client-protocol.h"
 #if HAVE_SYSTEMD
@@ -80,6 +81,7 @@ static void swayidle_log_errno(
 }
 
 static void swayidle_init() {
+	memset(&state, 0, sizeof(state));
 	wl_list_init(&state.timeout_cmds);
 }
 
@@ -88,6 +90,7 @@ static void swayidle_finish() {
 	struct swayidle_timeout_cmd *cmd;
 	struct swayidle_timeout_cmd *tmp;
 	wl_list_for_each_safe(cmd, tmp, &state.timeout_cmds, link) {
+		wl_list_init(&cmd->link);
 		wl_list_remove(&cmd->link);
 		free(cmd);
 	}
@@ -582,10 +585,13 @@ static int parse_idlehint(int argc, char **argv) {
 	return 2;
 }
 
-static int parse_args(int argc, char *argv[]) {
+static int parse_args(int argc, char *argv[], char **config_path) {
 	int c;
-	while ((c = getopt(argc, argv, "hdw")) != -1) {
+	while ((c = getopt(argc, argv, "C:hdw")) != -1) {
 		switch (c) {
+		case 'C':
+			*config_path = strdup(optarg);
+			break;
 		case 'd':
 			verbosity = LOG_DEBUG;
 			break;
@@ -596,6 +602,7 @@ static int parse_args(int argc, char *argv[]) {
 		case '?':
 			printf("Usage: %s [OPTIONS]\n", argv[0]);
 			printf("  -h\tthis help menu\n");
+			printf("  -C\tpath to config file\n");
 			printf("  -d\tdebug\n");
 			printf("  -w\twait for command to finish\n");
 			return 1;
@@ -681,12 +688,109 @@ static int display_event(int fd, uint32_t mask, void *data) {
 	return count;
 }
 
+static char *get_config_path(void) {
+	static char *config_paths[3] = {
+		"$XDG_CONFIG_HOME/swayidle/config",
+		"$HOME/.swayidle/config",
+		SYSCONFDIR "/swayidle/config",
+	};
+
+	char *config_home = getenv("XDG_CONFIG_HOME");
+
+	if (!config_home || config_home[0] == '\n') {
+		config_paths[0] = "$HOME/.config/swayidle/config";
+	}
+
+	wordexp_t p;
+	char *path;
+	for (size_t i = 0; i < sizeof(config_paths) / sizeof(char *); ++i) {
+		if (wordexp(config_paths[i], &p, 0) == 0) {
+			path = strdup(p.we_wordv[0]);
+			wordfree(&p);
+			if (path && access(path, R_OK) == 0) {
+				return path;
+			}
+			free(path);
+		}
+	}
+
+	return NULL;
+}
+
+static int load_config(const char *config_path) {
+	FILE *f = fopen(config_path, "r");
+
+	if (!f) {
+		return -1;
+	}
+
+	size_t lineno = 0;
+	char *line = NULL;
+	size_t n = 0;
+	ssize_t nread;
+	while ((nread = getline(&line, &n, f)) != -1) {
+		lineno++;
+		line[nread-1] = '\0';
+
+		if (strlen(line) == 0 || line[0] == '#') {
+			continue;
+		}
+
+		size_t i = 0;
+		while (line[i] != '\0' && line[i] != ' ') {
+			i++;
+		}
+
+		wordexp_t p;
+		wordexp(line, &p, 0);
+		if (strncmp("timeout", line, i) == 0) {
+			parse_timeout(p.we_wordc, p.we_wordv);
+		} else if (strncmp("before-sleep", line, i) == 0) {
+			parse_sleep(p.we_wordc, p.we_wordv);
+		} else if (strncmp("after-resume", line, i) == 0) {
+			parse_resume(p.we_wordc, p.we_wordv);
+		} else if (strncmp("lock", line, i) == 0) {
+			parse_lock(p.we_wordc, p.we_wordv);
+		} else if (strncmp("unlock", line, i) == 0) {
+			parse_unlock(p.we_wordc, p.we_wordv);
+		} else if (strncmp("idlehint", line, i) == 0) {
+			parse_idlehint(p.we_wordc, p.we_wordv);
+		} else {
+			line[i] = 0;
+			swayidle_log(LOG_ERROR, "Unexpected keyword \"%s\" in line %lu", line, lineno);
+			free(line);
+			return -1;
+		}
+		wordfree(&p);
+	}
+	free(line);
+	fclose(f);
+
+	return 0;
+}
+
+
 int main(int argc, char *argv[]) {
 	swayidle_init();
-	if (parse_args(argc, argv) != 0) {
+	char *config_path = NULL;
+	if (parse_args(argc, argv, &config_path) != 0) {
 		swayidle_finish();
 		return -1;
 	}
+
+	if (!config_path) {
+		config_path = get_config_path();
+	}
+
+	if (load_config(config_path) == -1) {
+		swayidle_finish();
+		swayidle_init();
+		swayidle_log(LOG_DEBUG, "Failed to load config. Starting without it...");
+	} else {
+		swayidle_log(LOG_DEBUG, "Loaded config at %s", config_path);
+	}
+
+	free(config_path);
 
 	state.event_loop = wl_event_loop_create();
 
