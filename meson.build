@@ -21,6 +21,12 @@ add_project_arguments(
 	language: 'c',
 )
 
+sysconfdir = get_option('sysconfdir')
+prefix = get_option('prefix')
+add_project_arguments(
+	'-DSYSCONFDIR="@0@"'.format(join_paths(prefix, sysconfdir)),
+	language : 'c')
+
 wayland_client = dependency('wayland-client')
 wayland_protos = dependency('wayland-protocols', version: '>=1.14')
 wayland_server = dependency('wayland-server')

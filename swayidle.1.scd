@@ -10,6 +10,11 @@ swayidle - Idle manager for Wayland
 
 # OPTIONS
 
+*-C* <path>
+	The config file to use. By default, the following paths are checked in the following order: $XDG_CONFIG_HOME/swayidle/config, $HOME/swayidle/config
+	Config file entries are events as described in the EVENTS section.
+	Specifying events in the config and as arguments is not mutually exclusive.
+
 *-h*
 	Show help message and quit.
 
@@ -26,7 +31,7 @@ swayidle - Idle manager for Wayland
 
 swayidle listens for idle activity on your Wayland compositor and executes tasks
 on various idle-related events. You can specify any number of events at the
-command line.
+command line and in the config file.
 
 Sending SIGUSR1 to swayidle will immediately enter idle state.
 
