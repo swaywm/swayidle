@@ -80,9 +80,27 @@ static void swayidle_log_errno(
 	fprintf(stderr, ": %s\n", strerror(errno));
 }
 
+static void swayidle_init() {
+	wl_list_init(&state.timeout_cmds);
+}
+
+static void swayidle_finish() {
+
+	struct swayidle_timeout_cmd *cmd;
+	struct swayidle_timeout_cmd *tmp;
+	wl_list_for_each_safe(cmd, tmp, &state.timeout_cmds, link) {
+		wl_list_remove(&cmd->link);
+		free(cmd);
+	}
+
+	free(state.after_resume_cmd);
+	free(state.before_sleep_cmd);
+}
+
 void sway_terminate(int exit_code) {
 	wl_display_disconnect(state.display);
 	wl_event_loop_destroy(state.event_loop);
+	swayidle_finish();
 	exit(exit_code);
 }
 
@@ -587,8 +605,6 @@ static int parse_args(int argc, char *argv[]) {
 		}
 	}
 
-	wl_list_init(&state.timeout_cmds);
-
 	int i = optind;
 	while (i < argc) {
 		if (!strcmp("timeout", argv[i])) {
@@ -667,7 +683,9 @@ static int display_event(int fd, uint32_t mask, void *data) {
 }
 
 int main(int argc, char *argv[]) {
+	swayidle_init();
 	if (parse_args(argc, argv) != 0) {
+		swayidle_finish();
 		return -1;
 	}
 
@@ -682,6 +700,7 @@ int main(int argc, char *argv[]) {
 		swayidle_log(LOG_ERROR, "Unable to connect to the compositor. "
 				"If your compositor is running, check or set the "
 				"WAYLAND_DISPLAY environment variable.");
+		swayidle_finish();
 		return -3;
 	}
 
@@ -691,10 +710,12 @@ int main(int argc, char *argv[]) {
 
 	if (idle_manager == NULL) {
 		swayidle_log(LOG_ERROR, "Display doesn't support idle protocol");
+		swayidle_finish();
 		return -4;
 	}
 	if (seat == NULL) {
 		swayidle_log(LOG_ERROR, "Seat error");
+		swayidle_finish();
 		return -5;
 	}
 
