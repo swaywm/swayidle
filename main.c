@@ -721,7 +721,7 @@ static int load_config(const char *config_path) {
 	FILE *f = fopen(config_path, "r");
 
 	if (!f) {
-		return -1;
+		return -ENOENT;
 	}
 
 	size_t lineno = 0;
@@ -759,7 +759,7 @@ static int load_config(const char *config_path) {
 			line[i] = 0;
 			swayidle_log(LOG_ERROR, "Unexpected keyword \"%s\" in line %lu", line, lineno);
 			free(line);
-			return -1;
+			return -EINVAL;
 		}
 		wordfree(&p);
 	}
@@ -782,10 +782,13 @@ int main(int argc, char *argv[]) {
 		config_path = get_config_path();
 	}
 
-	if (load_config(config_path) == -1) {
-		swayidle_finish();
-		swayidle_init();
-		swayidle_log(LOG_DEBUG, "Failed to load config. Starting without it...");
+	int config_load = load_config(config_path);
+
+	if (config_load == -ENOENT) {
+		swayidle_log(LOG_DEBUG, "No config file found.");
+	} else if (config_load == -EINVAL) {
+		swayidle_log(LOG_ERROR, "Config file %s has errors, exiting.", config_path);
+		exit(-1);
 	} else {
 		swayidle_log(LOG_DEBUG, "Loaded config at %s", config_path);
 	}
