@@ -290,14 +290,28 @@ static void connect_to_bus(void) {
 	struct wl_event_source *source = wl_event_loop_add_fd(state.event_loop,
 		sd_bus_get_fd(bus), WL_EVENT_READABLE, dbus_event, bus);
 	wl_event_source_check(source);
+
 	ret = sd_bus_call_method(bus, "org.freedesktop.login1",
 			"/org/freedesktop/login1",
-			"org.freedesktop.login1.Manager", "GetSessionByPID",
-			&error, &msg, "u", my_pid);
+			"org.freedesktop.login1.Manager", "GetSession",
+			&error, &msg, "s", "auto");
 	if (ret < 0) {
-		swayidle_log(LOG_ERROR,
-				"Failed to find session name: %s", error.message);
-		goto cleanup;
+		swayidle_log(LOG_DEBUG,
+				"GetSession failed: %s", error.message);
+		sd_bus_error_free(&error);
+		sd_bus_message_unref(msg);
+
+		ret = sd_bus_call_method(bus, "org.freedesktop.login1",
+				"/org/freedesktop/login1",
+				"org.freedesktop.login1.Manager", "GetSessionByPID",
+				&error, &msg, "u", my_pid);
+		if (ret < 0) {
+			swayidle_log(LOG_DEBUG,
+					"GetSessionByPID failed: %s", error.message);
+			swayidle_log(LOG_ERROR,
+					"Failed to find session");
+			goto cleanup;
+		}
 	}
 
 	ret = sd_bus_message_read(msg, "o", &session_name_tmp);
@@ -307,6 +321,8 @@ static void connect_to_bus(void) {
 		goto cleanup;
 	}
 	session_name = strdup(session_name_tmp);
+	swayidle_log(LOG_DEBUG, "Using session: %s", session_name);
+
 cleanup:
 	sd_bus_error_free(&error);
 	sd_bus_message_unref(msg);
