@@ -207,6 +207,8 @@ static void set_idle_hint(bool hint) {
 
 static bool get_logind_idle_inhibit(void) {
 	const char *locks;
+	bool res;
+
 	sd_bus_message *reply = NULL;
 
 	int ret = sd_bus_get_property(bus, DBUS_LOGIND_SERVICE, DBUS_LOGIND_PATH,
@@ -219,8 +221,11 @@ static bool get_logind_idle_inhibit(void) {
 	if (ret < 0) {
 		goto error;
 	}
+
+	res = strstr(locks, "idle") != NULL;
 	sd_bus_message_unref(reply);
-	return strstr(locks, "idle") != NULL;
+
+	return res;
 
 error:
 	sd_bus_message_unref(reply);
