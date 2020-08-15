@@ -27,6 +27,9 @@ swayidle - Idle manager for Wayland
 
 	Note: using this option causes swayidle to block until the command finishes.
 
+*-S* <seat-name>
+	Specify which seat to use. By default, if no name is specified, an arbitrary seat will be picked instead.
+
 # DESCRIPTION
 
 swayidle listens for idle activity on your Wayland compositor and executes tasks
