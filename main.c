@@ -31,6 +31,8 @@ struct swayidle_state {
 	struct wl_display *display;
 	struct wl_event_loop *event_loop;
 	struct wl_list timeout_cmds; // struct swayidle_timeout_cmd *
+	struct wl_list seats;
+	char *seat_name;
 	char *before_sleep_cmd;
 	char *after_resume_cmd;
 	char *logind_lock_cmd;
@@ -48,6 +50,14 @@ struct swayidle_timeout_cmd {
 	char *resume_cmd;
 	bool idlehint;
 	bool resume_pending;
+};
+
+struct seat {
+	struct wl_list link;
+	struct wl_seat *proxy;
+
+	char *name;
+	uint32_t capabilities;
 };
 
 enum log_importance {
@@ -84,6 +94,7 @@ static void swayidle_log_errno(
 static void swayidle_init() {
 	memset(&state, 0, sizeof(state));
 	wl_list_init(&state.timeout_cmds);
+	wl_list_init(&state.seats);
 }
 
 static void swayidle_finish() {
@@ -466,13 +477,34 @@ static void setup_property_changed_listener(void) {
 }
 #endif
 
+static void seat_handle_capabilities(void *data, struct wl_seat *seat,
+		uint32_t capabilities) {
+	struct seat *self = data;
+	self->capabilities = capabilities;
+}
+
+static void seat_handle_name(void *data, struct wl_seat *seat,
+		const char *name) {
+	struct seat *self = data;
+	self->name = strdup(name);
+}
+
+static const struct wl_seat_listener wl_seat_listener = {
+	.name = seat_handle_name,
+	.capabilities = seat_handle_capabilities,
+};
+
 static void handle_global(void *data, struct wl_registry *registry,
 		uint32_t name, const char *interface, uint32_t version) {
 	if (strcmp(interface, org_kde_kwin_idle_interface.name) == 0) {
 		idle_manager =
 			wl_registry_bind(registry, name, &org_kde_kwin_idle_interface, 1);
 	} else if (strcmp(interface, wl_seat_interface.name) == 0) {
-		seat = wl_registry_bind(registry, name, &wl_seat_interface, 1);
+		struct seat *s = calloc(1, sizeof(struct seat));
+		s->proxy = wl_registry_bind(registry, name, &wl_seat_interface, 2);
+
+		wl_seat_add_listener(s->proxy, &wl_seat_listener, s);
+		wl_list_insert(&state.seats, &s->link);
 	}
 }
 
@@ -748,7 +780,7 @@ static int parse_idlehint(int argc, char **argv) {
 
 static int parse_args(int argc, char *argv[], char **config_path) {
 	int c;
-	while ((c = getopt(argc, argv, "C:hdw")) != -1) {
+	while ((c = getopt(argc, argv, "C:hdwS:")) != -1) {
 		switch (c) {
 		case 'C':
 			*config_path = strdup(optarg);
@@ -759,6 +791,9 @@ static int parse_args(int argc, char *argv[], char **config_path) {
 		case 'w':
 			state.wait = true;
 			break;
+		case 'S':
+			state.seat_name = strdup(optarg);
+			break;
 		case 'h':
 		case '?':
 			printf("Usage: %s [OPTIONS]\n", argv[0]);
@@ -766,6 +801,7 @@ static int parse_args(int argc, char *argv[], char **config_path) {
 			printf("  -C\tpath to config file\n");
 			printf("  -d\tdebug\n");
 			printf("  -w\twait for command to finish\n");
+			printf("  -S\tpick the seat to work with\n");
 			return 1;
 		default:
 			return 1;
@@ -974,6 +1010,14 @@ int main(int argc, char *argv[]) {
 	struct wl_registry *registry = wl_display_get_registry(state.display);
 	wl_registry_add_listener(registry, &registry_listener, NULL);
 	wl_display_roundtrip(state.display);
+	wl_display_roundtrip(state.display);
+
+	struct seat *seat_i;
+	wl_list_for_each(seat_i, &state.seats, link) {
+		if (state.seat_name == NULL || strcmp(seat_i->name, state.seat_name) == 0) {
+			seat = seat_i->proxy;
+		}
+	}
 
 	if (idle_manager == NULL) {
 		swayidle_log(LOG_ERROR, "Display doesn't support idle protocol");
@@ -981,7 +1025,11 @@ int main(int argc, char *argv[]) {
 		return -4;
 	}
 	if (seat == NULL) {
-		swayidle_log(LOG_ERROR, "Seat error");
+		if (state.seat_name != NULL) {
+			swayidle_log(LOG_ERROR, "Seat %s not found", state.seat_name);
+		} else {
+			swayidle_log(LOG_ERROR, "No seat found");
+		}
 		swayidle_finish();
 		return -5;
 	}
