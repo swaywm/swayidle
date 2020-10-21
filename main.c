@@ -19,6 +19,7 @@
 #include "log.h"
 #if HAVE_SYSTEMD
 #include <systemd/sd-bus.h>
+#include <systemd/sd-daemon.h>
 #include <systemd/sd-login.h>
 #elif HAVE_ELOGIND
 #include <elogind/sd-bus.h>
@@ -631,6 +632,9 @@ static void handle_idle(void *data, struct org_kde_kwin_idle_timeout *timer) {
 	struct swayidle_timeout_cmd *cmd = data;
 	cmd->resume_pending = true;
 	swayidle_log(LOG_DEBUG, "idle state");
+#if HAVE_SYSTEMD
+	sd_notify(0, "STATUS=idle state");
+#endif
 #if HAVE_SYSTEMD || HAVE_ELOGIND
 	if (cmd->idlehint) {
 		set_idle_hint(true);
@@ -648,6 +652,9 @@ static void handle_resume(void *data, struct org_kde_kwin_idle_timeout *timer) {
 	if (cmd->registered_timeout != cmd->timeout) {
 		register_timeout(cmd, cmd->timeout);
 	}
+#if HAVE_SYSTEMD
+	sd_notify(0, "STATUS=active state");
+#endif
 #if HAVE_SYSTEMD || HAVE_ELOGIND
 	if (cmd->idlehint) {
 		set_idle_hint(false);
@@ -1117,6 +1124,10 @@ int main(int argc, char *argv[]) {
 		wl_display_get_fd(state.display), WL_EVENT_READABLE,
 		display_event, NULL);
 	wl_event_source_check(source);
+
+#if HAVE_SYSTEMD
+	sd_notify(0, "READY=1");
+#endif
 
 	while (wl_event_loop_dispatch(state.event_loop, -1) != 1) {
 		// This space intentionally left blank
