@@ -927,7 +927,9 @@ static int load_config(const char *config_path) {
 	ssize_t nread;
 	while ((nread = getline(&line, &n, f)) != -1) {
 		lineno++;
-		line[nread-1] = '\0';
+		if (line[nread-1] == '\n') {
+			line[nread-1] = '\0';
+		}
 
 		if (strlen(line) == 0 || line[0] == '#') {
 			continue;
