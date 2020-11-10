@@ -36,6 +36,8 @@ swayidle listens for idle activity on your Wayland compositor and executes tasks
 on various idle-related events. You can specify any number of events at the
 command line and in the config file.
 
+Sending SIGUSR2 to swayidle will reset the timers of timeout commands.
+
 # EVENTS
 
 *timeout* <timeout> <timeout command> [resume <resume command>]

@@ -850,12 +850,23 @@ static int handle_signal(int sig, void *data) {
 		}
 		sway_terminate(0);
 		return 0;
-	case SIGUSR1:
+	case SIGUSR1: {
 		swayidle_log(LOG_DEBUG, "Got SIGUSR1");
 		wl_list_for_each(cmd, &state.timeout_cmds, link) {
 			register_timeout(cmd, 0);
 		}
 		return 1;
+	}
+	case SIGUSR2: {
+		swayidle_log(LOG_DEBUG, "Got SIGUSR2");
+		struct swayidle_timeout_cmd *cmd;
+		wl_list_for_each(cmd, &state.timeout_cmds, link) {
+			register_timeout(cmd, cmd->timeout);
+		}
+		return 1;
+	}
+	default:
+		swayidle_log(LOG_DEBUG, "Unhandled signal %s", strsignal(sig));
 	}
 	assert(false); // not reached
 }
@@ -999,6 +1010,7 @@ int main(int argc, char *argv[]) {
 	wl_event_loop_add_signal(state.event_loop, SIGINT, handle_signal, NULL);
 	wl_event_loop_add_signal(state.event_loop, SIGTERM, handle_signal, NULL);
 	wl_event_loop_add_signal(state.event_loop, SIGUSR1, handle_signal, NULL);
+	wl_event_loop_add_signal(state.event_loop, SIGUSR2, handle_signal, NULL);
 
 	state.display = wl_display_connect(NULL);
 	if (state.display == NULL) {
