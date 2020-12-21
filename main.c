@@ -19,10 +19,8 @@
 #include "log.h"
 #if HAVE_SYSTEMD
 #include <systemd/sd-bus.h>
-#include <systemd/sd-login.h>
 #elif HAVE_ELOGIND
 #include <elogind/sd-bus.h>
-#include <elogind/sd-login.h>
 #endif
 
 static struct org_kde_kwin_idle *idle_manager = NULL;
