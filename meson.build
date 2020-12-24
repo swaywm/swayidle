@@ -87,7 +87,11 @@ if get_option('sd-bus-provider') == 'auto'
 	if not sdbus.found()
 		sdbus = dependency('libelogind',
 			required: false,
+			not_found_message: 'libelogind not found, trying basu',
 		)
+	endif
+	if not sdbus.found()
+		sdbus = dependency('basu', required: false)
 	endif
 else
 	sdbus = dependency(get_option('sd-bus-provider'), required: get_option('logind'))
@@ -107,6 +111,7 @@ conf_data = configuration_data()
 
 conf_data.set10('HAVE_LIBSYSTEMD', sdbus.found() and sdbus.name() == 'libsystemd')
 conf_data.set10('HAVE_LIBELOGIND', sdbus.found() and sdbus.name() == 'libelogind')
+conf_data.set10('HAVE_BASU', sdbus.found() and sdbus.name() == 'basu')
 conf_data.set10('HAVE_LOGIND', have_logind)
 
 configure_file(output: 'config.h', configuration: conf_data)

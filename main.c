@@ -21,6 +21,8 @@
 #include <systemd/sd-bus.h>
 #elif HAVE_LIBELOGIND
 #include <elogind/sd-bus.h>
+#elif HAVE_BASU
+#include <basu/sd-bus.h>
 #endif
 
 static struct org_kde_kwin_idle *idle_manager = NULL;
@@ -714,7 +716,7 @@ static int parse_timeout(int argc, char **argv) {
 static int parse_sleep(int argc, char **argv) {
 #if !HAVE_LOGIND
 	swayidle_log(LOG_ERROR, "%s not supported: swayidle was compiled "
-		       "with neither systemd nor elogind support.", "before-sleep");
+		       "with neither systemd nor elogind nor basu support.", "before-sleep");
 	exit(-1);
 #endif
 	if (argc < 2) {
@@ -734,7 +736,7 @@ static int parse_sleep(int argc, char **argv) {
 static int parse_resume(int argc, char **argv) {
 #if !HAVE_LOGIND
 	swayidle_log(LOG_ERROR, "%s not supported: swayidle was compiled "
-			"with neither systemd nor elogind support.", "after-resume");
+			"with neither systemd nor elogind nor basu support.", "after-resume");
 	exit(-1);
 #endif
 	if (argc < 2) {
@@ -754,7 +756,7 @@ static int parse_resume(int argc, char **argv) {
 static int parse_lock(int argc, char **argv) {
 #if !HAVE_LOGIND
 	swayidle_log(LOG_ERROR, "%s not supported: swayidle was compiled"
-			" with neither systemd nor elogind support.", "lock");
+			" with neither systemd nor elogind nor basu support.", "lock");
 	exit(-1);
 #endif
 	if (argc < 2) {
@@ -774,7 +776,7 @@ static int parse_lock(int argc, char **argv) {
 static int parse_unlock(int argc, char **argv) {
 #if !HAVE_LOGIND
 	swayidle_log(LOG_ERROR, "%s not supported: swayidle was compiled"
-			" with neither systemd nor elogind support.", "unlock");
+			" with neither systemd nor elogind nor basu support.", "unlock");
 	exit(-1);
 #endif
 	if (argc < 2) {
@@ -794,7 +796,7 @@ static int parse_unlock(int argc, char **argv) {
 static int parse_idlehint(int argc, char **argv) {
 #if !HAVE_LOGIND
 	swayidle_log(LOG_ERROR, "%s not supported: swayidle was compiled"
-			" with neither systemd nor elogind support.", "idlehint");
+			" with neither systemd nor elogind nor basu support.", "idlehint");
 	exit(-1);
 #endif
 	if (state.logind_idlehint) {
