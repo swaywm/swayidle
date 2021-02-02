@@ -1,5 +1,4 @@
 #define _POSIX_C_SOURCE 200809L
-#include <assert.h>
 #include <errno.h>
 #include <fcntl.h>
 #include <signal.h>
@@ -857,7 +856,7 @@ static int handle_signal(int sig, void *data) {
 		}
 		return 1;
 	}
-	assert(false); // not reached
+	abort(); // not reached
 }
 
 static int display_event(int fd, uint32_t mask, void *data) {
