@@ -795,6 +795,7 @@ static int parse_args(int argc, char *argv[], char **config_path) {
 	while ((c = getopt(argc, argv, "C:hdwS:")) != -1) {
 		switch (c) {
 		case 'C':
+			free(*config_path);
 			*config_path = strdup(optarg);
 			break;
 		case 'd':
@@ -986,6 +987,7 @@ int main(int argc, char *argv[]) {
 	char *config_path = NULL;
 	if (parse_args(argc, argv, &config_path) != 0) {
 		swayidle_finish();
+		free(config_path);
 		return -1;
 	}
 
