@@ -101,7 +101,6 @@ static void swayidle_finish() {
 	struct swayidle_timeout_cmd *cmd;
 	struct swayidle_timeout_cmd *tmp;
 	wl_list_for_each_safe(cmd, tmp, &state.timeout_cmds, link) {
-		wl_list_init(&cmd->link);
 		wl_list_remove(&cmd->link);
 		free(cmd->idle_cmd);
 		free(cmd->resume_cmd);
