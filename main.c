@@ -197,7 +197,6 @@ static void release_inhibitor_lock(int fd) {
 		swayidle_log(LOG_DEBUG, "Releasing inhibitor lock %d", fd);
 		close(fd);
 	}
-	fd = -1;
 }
 
 static void set_idle_hint(bool hint) {
