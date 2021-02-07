@@ -338,9 +338,21 @@ static int handle_property_changed(sd_bus_message *msg, void *userdata,
 				}
 				return 0;
 			} else {
-				sd_bus_message_skip(msg, "{sv}");
+				ret = sd_bus_message_skip(msg, "v");
+				if (ret < 0) {
+					goto error;
+				}
+			}
+
+			ret = sd_bus_message_exit_container(msg);
+			if (ret < 0) {
+				goto error;
 			}
 		}
+	}
+
+	if (ret < 0) {
+		goto error;
 	}
 
 	return 0;
