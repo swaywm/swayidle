@@ -141,11 +141,11 @@ void sway_terminate(int exit_code) {
 	exit(exit_code);
 }
 
-static int cmd_exec(char *param) {
+static int cmd_exec(char *param, bool wait) {
 	swayidle_log(LOG_DEBUG, "Cmd exec %s", param);
 	pid_t pid = fork();
 	if (pid == 0) {
-		if (!state.wait) {
+		if (!wait) {
 			pid = fork();
 		}
 		if (pid == 0) {
@@ -163,12 +163,12 @@ static int cmd_exec(char *param) {
 		return pid;
 	} else {
 		swayidle_log(LOG_DEBUG, "Spawned process %s", param);
-		if (state.wait) {
+		if (wait) {
 			swayidle_log(LOG_DEBUG, "Blocking until process exits");
 		}
 		int status = 0;
 		waitpid(pid, &status, 0);
-		if (state.wait && WIFEXITED(status)) {
+		if (wait && WIFEXITED(status)) {
 			swayidle_log(LOG_DEBUG, "Process exit status: %d", WEXITSTATUS(status));
 		}
 		return status;
@@ -291,7 +291,7 @@ static int prepare_for_sleep(sd_bus_message *msg, void *userdata,
 	if (!going_down) {
 		acquire_inhibitor_lock("sleep", "delay", &sleep_lock_fd);
 		if (state.after_resume_cmd) {
-			cmd_exec(state.after_resume_cmd);
+			cmd_exec(state.after_resume_cmd, state.wait);
 		}
 		if (state.logind_idlehint) {
 			set_idle_hint(false);
@@ -300,7 +300,7 @@ static int prepare_for_sleep(sd_bus_message *msg, void *userdata,
 	}
 
 	if (state.before_sleep_cmd) {
-		cmd_exec(state.before_sleep_cmd);
+		cmd_exec(state.before_sleep_cmd, state.wait);
 	}
 	swayidle_log(LOG_DEBUG, "Prepare for sleep done");
 
@@ -313,7 +313,7 @@ static int handle_lock(sd_bus_message *msg, void *userdata,
 	swayidle_log(LOG_DEBUG, "Lock signal received");
 
 	if (state.logind_lock_cmd) {
-		cmd_exec(state.logind_lock_cmd);
+		cmd_exec(state.logind_lock_cmd, state.wait);
 	}
 	swayidle_log(LOG_DEBUG, "Lock command done");
 
@@ -328,7 +328,7 @@ static int handle_unlock(sd_bus_message *msg, void *userdata,
 		set_idle_hint(false);
 	}
 	if (state.logind_unlock_cmd) {
-		cmd_exec(state.logind_unlock_cmd);
+		cmd_exec(state.logind_unlock_cmd, state.wait);
 	}
 	swayidle_log(LOG_DEBUG, "Unlock command done");
 
@@ -633,9 +633,9 @@ static void handle_idle(void *data, struct org_kde_kwin_idle_timeout *timer) {
 		set_idle_hint(true);
 	} else
 #endif
-	if (!cmd->cond_cmd || cmd_exec(cmd->cond_cmd) == 0) {
+	if (!cmd->cond_cmd || cmd_exec(cmd->cond_cmd, true) == 0) {
 		if (cmd->idle_cmd) {
-			cmd_exec(cmd->idle_cmd);
+			cmd_exec(cmd->idle_cmd, state.wait);
 		}
 	} else {
 		register_timeout(cmd, cmd->timeout);
@@ -655,7 +655,7 @@ static void handle_resume(void *data, struct org_kde_kwin_idle_timeout *timer) {
 	} else
 #endif
 	if (cmd->resume_cmd) {
-		cmd_exec(cmd->resume_cmd);
+		cmd_exec(cmd->resume_cmd, state.wait);
 	}
 }
 
