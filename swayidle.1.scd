@@ -65,7 +65,7 @@ command line and in the config file.
 	session should be unlocked
 
 *idlehint* <timeout>
-	If built with systemd support, set IdleHint to indcate an idle logind/elogind
+	If built with systemd support, set IdleHint to indicate an idle logind/elogind
 	session after <timeout> seconds. Adding an idlehint event will also cause
 	swayidle to call SetIdleHint(false) when run, on resume, unlock, etc.
 
