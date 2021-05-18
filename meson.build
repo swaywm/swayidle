@@ -3,7 +3,7 @@ project(
 	'c',
 	version: '1.7',
 	license: 'MIT',
-	meson_version: '>=0.48.0',
+	meson_version: '>=0.50.0',
 	default_options: [
 		'c_std=c11',
 		'warning_level=2',
@@ -32,7 +32,6 @@ wayland_protos = dependency('wayland-protocols', version: '>=1.14')
 wayland_server = dependency('wayland-server')
 bash_comp      = dependency('bash-completion', required: false)
 fish_comp      = dependency('fish', required: false)
-logind = dependency('lib' + get_option('logind-provider'), required: get_option('logind'))
 
 scdoc = find_program('scdoc', required: get_option('man-pages'))
 wayland_scanner = find_program('wayland-scanner')
@@ -77,14 +76,43 @@ swayidle_deps = [
 	wayland_server,
 ]
 
-conf_data = configuration_data()
-conf_data.set10('HAVE_SYSTEMD', false)
-conf_data.set10('HAVE_ELOGIND', false)
-
-if logind.found()
-	swayidle_deps += logind
-	conf_data.set10('HAVE_' + get_option('logind-provider').to_upper(), true)
+if get_option('sd-bus-provider') == 'auto'
+	if not get_option('logind').disabled()
+		assert(get_option('auto_features').auto(), 'sd-bus-provider must not be set to auto since auto_features != auto')
+	endif
+	sdbus = dependency('libsystemd',
+		required: false,
+		not_found_message: 'libsystemd not found, trying libelogind',
+	)
+	if not sdbus.found()
+		sdbus = dependency('libelogind',
+			required: false,
+			not_found_message: 'libelogind not found, trying basu',
+		)
+	endif
+	if not sdbus.found()
+		sdbus = dependency('basu', required: false)
+	endif
+else
+	sdbus = dependency(get_option('sd-bus-provider'), required: get_option('logind'))
 endif
+
+logind_deps_found = sdbus.found()
+if get_option('logind').enabled() and not logind_deps_found
+	error('Building with -Dlogind=enabled, but sd-bus has not been not found')
+endif
+have_logind = (not get_option('logind').disabled()) and logind_deps_found
+
+if have_logind
+	swayidle_deps += sdbus
+endif
+
+conf_data = configuration_data()
+
+conf_data.set10('HAVE_LIBSYSTEMD', sdbus.found() and sdbus.name() == 'libsystemd')
+conf_data.set10('HAVE_LIBELOGIND', sdbus.found() and sdbus.name() == 'libelogind')
+conf_data.set10('HAVE_BASU', sdbus.found() and sdbus.name() == 'basu')
+conf_data.set10('HAVE_LOGIND', have_logind)
 
 configure_file(output: 'config.h', configuration: conf_data)
 

@@ -1,0 +1,17 @@
+image: freebsd/latest
+packages:
+  - basu
+  - meson
+  - pkgconf
+  - scdoc
+  - wayland
+  - wayland-protocols
+sources:
+  - https://github.com/swaywm/swayidle
+tasks:
+  - setup: |
+      cd swayidle
+      meson build
+  - build: |
+      cd swayidle
+      ninja -C build

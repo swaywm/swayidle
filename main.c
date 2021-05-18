@@ -15,12 +15,12 @@
 #include <wordexp.h>
 #include "config.h"
 #include "idle-client-protocol.h"
-#if HAVE_SYSTEMD
+#if HAVE_LIBSYSTEMD
 #include <systemd/sd-bus.h>
-#include <systemd/sd-login.h>
-#elif HAVE_ELOGIND
+#elif HAVE_LIBELOGIND
 #include <elogind/sd-bus.h>
-#include <elogind/sd-login.h>
+#elif HAVE_BASU
+#include <basu/sd-bus.h>
 #endif
 
 static struct org_kde_kwin_idle *idle_manager = NULL;
@@ -143,7 +143,7 @@ static void cmd_exec(char *param) {
 	}
 }
 
-#if HAVE_SYSTEMD || HAVE_ELOGIND
+#if HAVE_LOGIND
 #define DBUS_LOGIND_SERVICE "org.freedesktop.login1"
 #define DBUS_LOGIND_PATH "/org/freedesktop/login1"
 #define DBUS_LOGIND_MANAGER_INTERFACE "org.freedesktop.login1.Manager"
@@ -558,7 +558,7 @@ static void enable_timeouts(void) {
 	if (state.timeouts_enabled) {
 		return;
 	}
-#if HAVE_SYSTEMD || HAVE_ELOGIND
+#if HAVE_LOGIND
 	if (get_logind_idle_inhibit()) {
 		swayidle_log(LOG_INFO, "Not enabling timeouts: idle inhibitor found");
 		return;
@@ -573,7 +573,7 @@ static void enable_timeouts(void) {
 	}
 }
 
-#if HAVE_SYSTEMD || HAVE_ELOGIND
+#if HAVE_LOGIND
 static void disable_timeouts(void) {
 	if (!state.timeouts_enabled) {
 		return;
@@ -595,7 +595,7 @@ static void handle_idle(void *data, struct org_kde_kwin_idle_timeout *timer) {
 	struct swayidle_timeout_cmd *cmd = data;
 	cmd->resume_pending = true;
 	swayidle_log(LOG_DEBUG, "idle state");
-#if HAVE_SYSTEMD || HAVE_ELOGIND
+#if HAVE_LOGIND
 	if (cmd->idlehint) {
 		set_idle_hint(true);
 	} else
@@ -612,7 +612,7 @@ static void handle_resume(void *data, struct org_kde_kwin_idle_timeout *timer) {
 	if (cmd->registered_timeout != cmd->timeout) {
 		register_timeout(cmd, cmd->timeout);
 	}
-#if HAVE_SYSTEMD || HAVE_ELOGIND
+#if HAVE_LOGIND
 	if (cmd->idlehint) {
 		set_idle_hint(false);
 	} else
@@ -685,9 +685,9 @@ static int parse_timeout(int argc, char **argv) {
 }
 
 static int parse_sleep(int argc, char **argv) {
-#if !HAVE_SYSTEMD && !HAVE_ELOGIND
+#if !HAVE_LOGIND
 	swayidle_log(LOG_ERROR, "%s not supported: swayidle was compiled "
-		       "with neither systemd nor elogind support.", "before-sleep");
+		       "with neither systemd nor elogind nor basu support.", "before-sleep");
 	exit(-1);
 #endif
 	if (argc < 2) {
@@ -705,9 +705,9 @@ static int parse_sleep(int argc, char **argv) {
 }
 
 static int parse_resume(int argc, char **argv) {
-#if !HAVE_SYSTEMD && !HAVE_ELOGIND
+#if !HAVE_LOGIND
 	swayidle_log(LOG_ERROR, "%s not supported: swayidle was compiled "
-			"with neither systemd nor elogind support.", "after-resume");
+			"with neither systemd nor elogind nor basu support.", "after-resume");
 	exit(-1);
 #endif
 	if (argc < 2) {
@@ -725,9 +725,9 @@ static int parse_resume(int argc, char **argv) {
 }
 
 static int parse_lock(int argc, char **argv) {
-#if !HAVE_SYSTEMD && !HAVE_ELOGIND
+#if !HAVE_LOGIND
 	swayidle_log(LOG_ERROR, "%s not supported: swayidle was compiled"
-			" with neither systemd nor elogind support.", "lock");
+			" with neither systemd nor elogind nor basu support.", "lock");
 	exit(-1);
 #endif
 	if (argc < 2) {
@@ -745,9 +745,9 @@ static int parse_lock(int argc, char **argv) {
 }
 
 static int parse_unlock(int argc, char **argv) {
-#if !HAVE_SYSTEMD && !HAVE_ELOGIND
+#if !HAVE_LOGIND
 	swayidle_log(LOG_ERROR, "%s not supported: swayidle was compiled"
-			" with neither systemd nor elogind support.", "unlock");
+			" with neither systemd nor elogind nor basu support.", "unlock");
 	exit(-1);
 #endif
 	if (argc < 2) {
@@ -765,9 +765,9 @@ static int parse_unlock(int argc, char **argv) {
 }
 
 static int parse_idlehint(int argc, char **argv) {
-#if !HAVE_SYSTEMD && !HAVE_ELOGIND
+#if !HAVE_LOGIND
 	swayidle_log(LOG_ERROR, "%s not supported: swayidle was compiled"
-			" with neither systemd nor elogind support.", "idlehint");
+			" with neither systemd nor elogind nor basu support.", "idlehint");
 	exit(-1);
 #endif
 	if (state.logind_idlehint) {
@@ -1050,7 +1050,7 @@ int main(int argc, char *argv[]) {
 	}
 
 	bool should_run = !wl_list_empty(&state.timeout_cmds);
-#if HAVE_SYSTEMD || HAVE_ELOGIND
+#if HAVE_LOGIND
 	connect_to_bus();
 	setup_property_changed_listener();
 	if (state.before_sleep_cmd || state.after_resume_cmd) {
