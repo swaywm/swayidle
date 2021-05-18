@@ -3,7 +3,7 @@
 This is sway's idle management daemon, swayidle. It is compatible with any
 Wayland compositor which implements the KDE
 [idle](https://github.com/swaywm/sway/blob/master/protocols/idle.xml) protocol.
-See the man page, `swayidle(1)`, for instructions on configuring swayidle.
+See the man page, [swayidle(1)](./swayidle.1.scd), for instructions on configuring swayidle.
 
 ## Release Signatures
 
