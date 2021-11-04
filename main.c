@@ -16,6 +16,7 @@
 #include <wordexp.h>
 #include "config.h"
 #include "idle-client-protocol.h"
+#include "log.h"
 #if HAVE_SYSTEMD
 #include <systemd/sd-bus.h>
 #include <systemd/sd-login.h>
@@ -60,41 +61,19 @@ struct seat {
 	uint32_t capabilities;
 };
 
-enum log_importance {
-	LOG_DEBUG = 1,
-	LOG_INFO = 2,
-	LOG_ERROR = 3,
-};
+static enum log_importance log_importance = LOG_INFO;
 
-static enum log_importance verbosity = LOG_INFO;
-
-static void swayidle_log(enum log_importance importance, const char *fmt, ...) {
-	if (importance < verbosity) {
-		return;
+void swayidle_log_init(enum log_importance verbosity) {
+	if (verbosity < LOG_IMPORTANCE_LAST) {
+		log_importance = verbosity;
 	}
-	va_list args;
-	va_start(args, fmt);
-
-	// prefix the time to the log message
-	struct tm result;
-	time_t t = time(NULL);
-	struct tm *tm_info = localtime_r(&t, &result);
-	char buffer[26];
-
-	// generate time prefix
-	strftime(buffer, sizeof(buffer), "%F %T - ", tm_info);
-	fprintf(stderr, "%s", buffer);
-
-	vfprintf(stderr, fmt, args);
-	va_end(args);
-	fprintf(stderr, "\n");
 }
 
-static void swayidle_log_errno(
-		enum log_importance importance, const char *fmt, ...) {
-	if (importance < verbosity) {
+void _swayidle_log(enum log_importance verbosity, const char *fmt, ...) {
+	if (verbosity > log_importance) {
 		return;
 	}
+
 	va_list args;
 	va_start(args, fmt);
 
@@ -107,10 +86,21 @@ static void swayidle_log_errno(
 	// generate time prefix
 	strftime(buffer, sizeof(buffer), "%F %T - ", tm_info);
 	fprintf(stderr, "%s", buffer);
-	
+
 	vfprintf(stderr, fmt, args);
+
+	fprintf(stderr, "\n");
+
 	va_end(args);
-	fprintf(stderr, ": %s\n", strerror(errno));
+}
+
+const char *_swayidle_strip_path(const char *filepath) {
+	if (*filepath == '.') {
+		while (*filepath == '.' || *filepath == '/') {
+			++filepath;
+		}
+	}
+	return filepath;
 }
 
 static void swayidle_init() {
@@ -276,7 +266,7 @@ static int prepare_for_sleep(sd_bus_message *msg, void *userdata,
 	if (ret < 0) {
 		errno = -ret;
 		swayidle_log_errno(LOG_ERROR,
-				"Failed to parse D-Bus response for Inhibit: %s");
+				"Failed to parse D-Bus response for Inhibit");
 	}
 	swayidle_log(LOG_DEBUG, "PrepareForSleep signal received %d", going_down);
 	if (!going_down) {
@@ -821,7 +811,7 @@ static int parse_args(int argc, char *argv[], char **config_path) {
 			*config_path = strdup(optarg);
 			break;
 		case 'd':
-			verbosity = LOG_DEBUG;
+			swayidle_log_init(LOG_DEBUG);
 			break;
 		case 'w':
 			state.wait = true;
