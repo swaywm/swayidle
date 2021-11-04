@@ -61,6 +61,13 @@ struct seat {
 	uint32_t capabilities;
 };
 
+static const char *verbosity_colors[] = {
+	[LOG_SILENT] = "",
+	[LOG_ERROR ] = "\x1B[1;31m",
+	[LOG_INFO  ] = "\x1B[1;34m",
+	[LOG_DEBUG ] = "\x1B[1;30m",
+};
+
 static enum log_importance log_importance = LOG_INFO;
 
 void swayidle_log_init(enum log_importance verbosity) {
@@ -87,8 +94,18 @@ void _swayidle_log(enum log_importance verbosity, const char *fmt, ...) {
 	strftime(buffer, sizeof(buffer), "%F %T - ", tm_info);
 	fprintf(stderr, "%s", buffer);
 
+	unsigned c = (verbosity < LOG_IMPORTANCE_LAST)
+		? verbosity : LOG_IMPORTANCE_LAST - 1;
+
+	if (isatty(STDERR_FILENO)) {
+		fprintf(stderr, "%s", verbosity_colors[c]);
+	}
+
 	vfprintf(stderr, fmt, args);
 
+	if (isatty(STDERR_FILENO)) {
+		fprintf(stderr, "\x1B[0m");
+	}
 	fprintf(stderr, "\n");
 
 	va_end(args);
