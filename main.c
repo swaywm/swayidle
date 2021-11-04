@@ -111,15 +111,6 @@ void _swayidle_log(enum log_importance verbosity, const char *fmt, ...) {
 	va_end(args);
 }
 
-const char *_swayidle_strip_path(const char *filepath) {
-	if (*filepath == '.') {
-		while (*filepath == '.' || *filepath == '/') {
-			++filepath;
-		}
-	}
-	return filepath;
-}
-
 static void swayidle_init() {
 	memset(&state, 0, sizeof(state));
 	wl_list_init(&state.timeout_cmds);

@@ -24,11 +24,8 @@ void swayidle_log_init(enum log_importance verbosity);
 void _swayidle_log(enum log_importance verbosity, const char *format, ...)
     _ATTRIB_PRINTF(2, 3);
 
-const char *_swayidle_strip_path(const char *filepath);
-
 #define swayidle_log(verb, fmt, ...) \
-    _swayidle_log(verb, "[%s:%d] " fmt, _swayidle_strip_path(__FILE__), \
-            __LINE__, ##__VA_ARGS__)
+    _swayidle_log(verb, "[main.c:%d] " fmt, __LINE__, ##__VA_ARGS__)
 
 #define swayidle_log_errno(verb, fmt, ...) \
     swayidle_log(verb, fmt ": %s", ##__VA_ARGS__, strerror(errno))
