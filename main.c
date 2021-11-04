@@ -7,6 +7,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <sys/wait.h>
+#include <time.h>
 #include <unistd.h>
 #include <wayland-client-protocol.h>
 #include <wayland-client.h>
@@ -73,6 +74,17 @@ static void swayidle_log(enum log_importance importance, const char *fmt, ...) {
 	}
 	va_list args;
 	va_start(args, fmt);
+
+	// prefix the time to the log message
+	struct tm result;
+	time_t t = time(NULL);
+	struct tm *tm_info = localtime_r(&t, &result);
+	char buffer[26];
+
+	// generate time prefix
+	strftime(buffer, sizeof(buffer), "%F %T - ", tm_info);
+	fprintf(stderr, "%s", buffer);
+
 	vfprintf(stderr, fmt, args);
 	va_end(args);
 	fprintf(stderr, "\n");
@@ -85,6 +97,17 @@ static void swayidle_log_errno(
 	}
 	va_list args;
 	va_start(args, fmt);
+
+	// prefix the time to the log message
+	struct tm result;
+	time_t t = time(NULL);
+	struct tm *tm_info = localtime_r(&t, &result);
+	char buffer[26];
+
+	// generate time prefix
+	strftime(buffer, sizeof(buffer), "%F %T - ", tm_info);
+	fprintf(stderr, "%s", buffer);
+	
 	vfprintf(stderr, fmt, args);
 	va_end(args);
 	fprintf(stderr, ": %s\n", strerror(errno));
