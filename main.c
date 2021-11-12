@@ -533,7 +533,8 @@ static const struct org_kde_kwin_idle_timeout_listener idle_timer_listener;
 
 static void destroy_cmd_timer(struct swayidle_timeout_cmd *cmd) {
 	if (cmd->idle_timer != NULL) {
-		org_kde_kwin_idle_timeout_destroy(cmd->idle_timer);
+		swayidle_log(LOG_DEBUG, "Release idle timer");
+		org_kde_kwin_idle_timeout_release(cmd->idle_timer);
 		cmd->idle_timer = NULL;
 	}
 }
