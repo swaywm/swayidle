@@ -160,9 +160,12 @@ static void cmd_exec(char *param) {
 		swayidle_log_errno(LOG_ERROR, "fork failed");
 	} else {
 		swayidle_log(LOG_DEBUG, "Spawned process %s", param);
-		int status;
-		waitpid(pid, &status, 0);
 		if (state.wait) {
+			swayidle_log(LOG_DEBUG, "Blocking until process exits");
+		}
+		int status = 0;
+		waitpid(pid, &status, 0);
+		if (state.wait && WIFEXITED(status)) {
 			swayidle_log(LOG_DEBUG, "Process exit status: %d", WEXITSTATUS(status));
 		}
 	}
