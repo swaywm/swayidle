@@ -7,6 +7,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <sys/wait.h>
+#include <time.h>
 #include <unistd.h>
 #include <wayland-client-protocol.h>
 #include <wayland-client.h>
@@ -15,6 +16,7 @@
 #include <wordexp.h>
 #include "config.h"
 #include "idle-client-protocol.h"
+#include "log.h"
 #if HAVE_SYSTEMD
 #include <systemd/sd-bus.h>
 #include <systemd/sd-login.h>
@@ -59,35 +61,54 @@ struct seat {
 	uint32_t capabilities;
 };
 
-enum log_importance {
-	LOG_DEBUG = 1,
-	LOG_INFO = 2,
-	LOG_ERROR = 3,
+static const char *verbosity_colors[] = {
+	[LOG_SILENT] = "",
+	[LOG_ERROR ] = "\x1B[1;31m",
+	[LOG_INFO  ] = "\x1B[1;34m",
+	[LOG_DEBUG ] = "\x1B[1;30m",
 };
 
-static enum log_importance verbosity = LOG_INFO;
+static enum log_importance log_importance = LOG_INFO;
 
-static void swayidle_log(enum log_importance importance, const char *fmt, ...) {
-	if (importance < verbosity) {
-		return;
+void swayidle_log_init(enum log_importance verbosity) {
+	if (verbosity < LOG_IMPORTANCE_LAST) {
+		log_importance = verbosity;
 	}
-	va_list args;
-	va_start(args, fmt);
-	vfprintf(stderr, fmt, args);
-	va_end(args);
-	fprintf(stderr, "\n");
 }
 
-static void swayidle_log_errno(
-		enum log_importance importance, const char *fmt, ...) {
-	if (importance < verbosity) {
+void _swayidle_log(enum log_importance verbosity, const char *fmt, ...) {
+	if (verbosity > log_importance) {
 		return;
 	}
+
 	va_list args;
 	va_start(args, fmt);
+
+	// prefix the time to the log message
+	struct tm result;
+	time_t t = time(NULL);
+	struct tm *tm_info = localtime_r(&t, &result);
+	char buffer[26];
+
+	// generate time prefix
+	strftime(buffer, sizeof(buffer), "%F %T - ", tm_info);
+	fprintf(stderr, "%s", buffer);
+
+	unsigned c = (verbosity < LOG_IMPORTANCE_LAST)
+		? verbosity : LOG_IMPORTANCE_LAST - 1;
+
+	if (isatty(STDERR_FILENO)) {
+		fprintf(stderr, "%s", verbosity_colors[c]);
+	}
+
 	vfprintf(stderr, fmt, args);
+
+	if (isatty(STDERR_FILENO)) {
+		fprintf(stderr, "\x1B[0m");
+	}
+	fprintf(stderr, "\n");
+
 	va_end(args);
-	fprintf(stderr, ": %s\n", strerror(errno));
 }
 
 static void swayidle_init() {
@@ -139,7 +160,14 @@ static void cmd_exec(char *param) {
 		swayidle_log_errno(LOG_ERROR, "fork failed");
 	} else {
 		swayidle_log(LOG_DEBUG, "Spawned process %s", param);
-		waitpid(pid, NULL, 0);
+		if (state.wait) {
+			swayidle_log(LOG_DEBUG, "Blocking until process exits");
+		}
+		int status = 0;
+		waitpid(pid, &status, 0);
+		if (state.wait && WIFEXITED(status)) {
+			swayidle_log(LOG_DEBUG, "Process exit status: %d", WEXITSTATUS(status));
+		}
 	}
 }
 
@@ -253,7 +281,7 @@ static int prepare_for_sleep(sd_bus_message *msg, void *userdata,
 	if (ret < 0) {
 		errno = -ret;
 		swayidle_log_errno(LOG_ERROR,
-				"Failed to parse D-Bus response for Inhibit: %s");
+				"Failed to parse D-Bus response for Inhibit");
 	}
 	swayidle_log(LOG_DEBUG, "PrepareForSleep signal received %d", going_down);
 	if (!going_down) {
@@ -799,7 +827,7 @@ static int parse_args(int argc, char *argv[], char **config_path) {
 			*config_path = strdup(optarg);
 			break;
 		case 'd':
-			verbosity = LOG_DEBUG;
+			swayidle_log_init(LOG_DEBUG);
 			break;
 		case 'w':
 			state.wait = true;
