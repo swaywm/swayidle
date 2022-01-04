@@ -51,6 +51,7 @@ struct swayidle_timeout_cmd {
 	char *resume_cmd;
 	bool idlehint;
 	bool resume_pending;
+	bool loop;
 };
 
 struct seat {
@@ -631,6 +632,10 @@ static void handle_idle(void *data, struct org_kde_kwin_idle_timeout *timer) {
 #endif
 	if (cmd->idle_cmd) {
 		cmd_exec(cmd->idle_cmd);
+
+		if (cmd->loop) {
+			register_timeout(cmd, cmd->timeout);
+		}
 	}
 }
 
@@ -711,6 +716,25 @@ static int parse_timeout(int argc, char **argv) {
 	}
 	wl_list_insert(&state.timeout_cmds, &cmd->link);
 	return result;
+}
+
+static int parse_loop(int argc, char **argv) {
+	if (argc < 3) {
+		swayidle_log(LOG_ERROR, "Too few parameters to loop command. "
+				"Usage: loop <seconds> <command>");
+		exit(-1);
+	}
+
+	struct swayidle_timeout_cmd *cmd = build_timeout_cmd(argc, argv);
+
+	swayidle_log(LOG_DEBUG, "Register loop timeout at %d ms", cmd->timeout);
+	swayidle_log(LOG_DEBUG, "Setup idle");
+	cmd->loop = true;
+	cmd->idle_cmd = parse_command(argc - 2, &argv[2]);
+
+	wl_list_insert(&state.timeout_cmds, &cmd->link);
+
+	return 3;
 }
 
 static int parse_sleep(int argc, char **argv) {
@@ -854,6 +878,9 @@ static int parse_args(int argc, char *argv[], char **config_path) {
 		if (!strcmp("timeout", argv[i])) {
 			swayidle_log(LOG_DEBUG, "Got timeout");
 			i += parse_timeout(argc - i, &argv[i]);
+		} else if (!strcmp("loop", argv[i])) {
+			swayidle_log(LOG_DEBUG, "Got loop");
+			i += parse_loop(argc - i, &argv[i]);
 		} else if (!strcmp("before-sleep", argv[i])) {
 			swayidle_log(LOG_DEBUG, "Got before-sleep");
 			i += parse_sleep(argc - i, &argv[i]);

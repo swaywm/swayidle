@@ -44,6 +44,10 @@ command line and in the config file.
 	If you specify "resume <resume command>", _resume command_ will be run when
 	there is activity again.
 
+*loop* <timeout> <timeout command>
+	Execute _timeout command_ periodically if there is no activity for <timeout> 
+	seconds.
+
 *before-sleep* <command>
 	If built with systemd support, executes _command_ before systemd puts the
 	computer to sleep.
