@@ -638,7 +638,8 @@ static void handle_idle(void *data, struct org_kde_kwin_idle_timeout *timer) {
 			cmd_exec(cmd->idle_cmd, state.wait);
 		}
 	} else {
-		register_timeout(cmd, cmd->timeout);
+		// Recheck condition every 5 seconds
+		register_timeout(cmd, 5000);
 	}
 }
 
