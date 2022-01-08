@@ -147,6 +147,13 @@ static void cmd_exec(char *param) {
 			pid = fork();
 		}
 		if (pid == 0) {
+			sigset_t set;
+			sigemptyset(&set);
+			sigprocmask(SIG_SETMASK, &set, NULL);
+			signal(SIGINT, SIG_DFL);
+			signal(SIGTERM, SIG_DFL);
+			signal(SIGUSR1, SIG_DFL);
+
 			char *const cmd[] = { "sh", "-c", param, NULL, };
 			execvp(cmd[0], cmd);
 			swayidle_log_errno(LOG_ERROR, "execve failed!");
