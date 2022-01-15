@@ -1004,7 +1004,7 @@ static int load_config(const char *config_path) {
 			parse_idlehint(p.we_wordc, p.we_wordv);
 		} else {
 			line[i] = 0;
-			swayidle_log(LOG_ERROR, "Unexpected keyword \"%s\" in line %lu", line, lineno);
+			swayidle_log(LOG_ERROR, "Unexpected keyword \"%s\" in line %zu", line, lineno);
 			free(line);
 			return -EINVAL;
 		}
