@@ -18,9 +18,6 @@ releases are managed independently of sway releases.
 Swayidle is available in many distributions. Try installing the "swayidle"
 package for yours.
 
-If you're interested in packaging swayidle for your distribution, stop by the
-IRC channel or shoot an email to sir@cmpwn.com for advice.
-
 ### Compiling from Source
 
 Install dependencies:
@@ -31,10 +28,10 @@ Install dependencies:
 * [scdoc](https://git.sr.ht/~sircmpwn/scdoc) (optional: man pages) \*
 * git \*
 
-_\*Compile-time dep_
+_\* Compile-time dependency_
 
 Run these commands:
 
-    meson build
-    ninja -C build
-    sudo ninja -C build install
+    meson build/
+    ninja -C build/
+    sudo ninja -C build/ install
