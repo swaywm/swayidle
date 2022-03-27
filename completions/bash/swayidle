@@ -2,7 +2,7 @@
 
 _swayidle()
 {
-  local cur prev
+  local cur prev events short
   _get_comp_words_by_ref -n : cur prev
   local prev2=${COMP_WORDS[COMP_CWORD-2]}
   local prev3=${COMP_WORDS[COMP_CWORD-3]}
