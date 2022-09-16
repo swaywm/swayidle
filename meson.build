@@ -3,7 +3,7 @@ project(
 	'c',
 	version: '1.7.1',
 	license: 'MIT',
-	meson_version: '>=0.54.0',
+	meson_version: '>=0.59.0',
 	default_options: [
 		'c_std=c11',
 		'warning_level=2',
@@ -97,7 +97,6 @@ executable(
 )
 
 if scdoc.found()
-	sh = find_program('sh')
 	mandir = get_option('mandir')
 	man_files = [
 		'swayidle.1.scd',
@@ -111,9 +110,9 @@ if scdoc.found()
 			output,
 			input: filename,
 			output: output,
-			command: [
-				sh, '-c', '@0@ < @INPUT@ > @1@'.format(scdoc.path(), output)
-			],
+			command: scdoc,
+			feed: true,
+			capture: true,
 			install: true,
 			install_dir: '@0@/man@1@'.format(mandir, section)
 		)
@@ -136,7 +135,7 @@ if get_option('bash-completions')
 		'completions/bash/swayidle',
 	)
 	if bash_comp.found()
-		bash_install_dir = bash_comp.get_pkgconfig_variable('completionsdir')
+		bash_install_dir = bash_comp.get_variable('completionsdir')
 	else
 		bash_install_dir = datadir + '/bash-completion/completions'
 	endif
@@ -149,7 +148,7 @@ if get_option('fish-completions')
 		'completions/fish/swayidle.fish',
 	)
 	if fish_comp.found()
-		fish_install_dir = fish_comp.get_pkgconfig_variable('completionsdir')
+		fish_install_dir = fish_comp.get_variable('completionsdir')
 	else
 		fish_install_dir = datadir + '/fish/vendor_completions.d'
 	endif
