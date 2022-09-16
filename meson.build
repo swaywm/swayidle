@@ -3,7 +3,7 @@ project(
 	'c',
 	version: '1.7.1',
 	license: 'MIT',
-	meson_version: '>=0.48.0',
+	meson_version: '>=0.54.0',
 	default_options: [
 		'c_std=c11',
 		'warning_level=2',
@@ -37,7 +37,7 @@ logind = dependency('lib' + get_option('logind-provider'), required: get_option(
 scdoc = find_program('scdoc', required: get_option('man-pages'))
 wayland_scanner = find_program('wayland-scanner')
 
-wl_protocol_dir = wayland_protos.get_pkgconfig_variable('pkgdatadir')
+wl_protocol_dir = wayland_protos.get_variable(pkgconfig: 'pkgdatadir', internal: 'pkgdatadir')
 
 if wayland_server.version().version_compare('>=1.14.91')
 	code_type = 'private-code'
