@@ -28,7 +28,7 @@ add_project_arguments(
 	language : 'c')
 
 wayland_client = dependency('wayland-client')
-wayland_protos = dependency('wayland-protocols', version: '>=1.14')
+wayland_protos = dependency('wayland-protocols', version: '>=1.27')
 wayland_server = dependency('wayland-server')
 bash_comp      = dependency('bash-completion', required: false)
 fish_comp      = dependency('fish', required: false)
@@ -57,8 +57,17 @@ wayland_scanner_client = generator(
 	arguments: ['client-header', '@INPUT@', '@OUTPUT@'],
 )
 
-client_protos_src = wayland_scanner_code.process('idle.xml')
-client_protos_headers = wayland_scanner_client.process('idle.xml')
+protos = [
+	'idle.xml',
+	wl_protocol_dir / 'staging/ext-idle-notify/ext-idle-notify-v1.xml',
+]
+
+client_protos_src = []
+client_protos_headers = []
+foreach xml : protos
+	client_protos_src += wayland_scanner_code.process(xml)
+	client_protos_headers += wayland_scanner_client.process(xml)
+endforeach
 
 lib_client_protos = static_library(
 	'client_protos',
