@@ -964,7 +964,6 @@ static char *get_config_path(void) {
 
 static int load_config(const char *config_path) {
 	FILE *f = fopen(config_path, "r");
-
 	if (!f) {
 		return -ENOENT;
 	}
@@ -1030,8 +1029,10 @@ int main(int argc, char *argv[]) {
 		config_path = get_config_path();
 	}
 
-	int config_load = load_config(config_path);
-
+	int config_load = -ENOENT;
+	if (config_path) {
+		config_load = load_config(config_path);
+	}
 	if (config_load == -ENOENT) {
 		swayidle_log(LOG_DEBUG, "No config file found.");
 	} else if (config_load == -EINVAL) {
