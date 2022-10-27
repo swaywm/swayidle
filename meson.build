@@ -32,7 +32,6 @@ wayland_protos = dependency('wayland-protocols', version: '>=1.27')
 wayland_server = dependency('wayland-server')
 bash_comp      = dependency('bash-completion', required: false)
 fish_comp      = dependency('fish', required: false)
-logind = dependency('lib' + get_option('logind-provider'), required: get_option('logind'))
 
 scdoc = find_program('scdoc', required: get_option('man-pages'))
 wayland_scanner = find_program('wayland-scanner')
@@ -85,17 +84,6 @@ swayidle_deps = [
 	wayland_client,
 	wayland_server,
 ]
-
-conf_data = configuration_data()
-conf_data.set10('HAVE_SYSTEMD', false)
-conf_data.set10('HAVE_ELOGIND', false)
-
-if logind.found()
-	swayidle_deps += logind
-	conf_data.set10('HAVE_' + get_option('logind-provider').to_upper(), true)
-endif
-
-configure_file(output: 'config.h', configuration: conf_data)
 
 executable(
 	'swayidle', [

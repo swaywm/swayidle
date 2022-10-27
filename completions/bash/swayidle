@@ -9,7 +9,6 @@ _swayidle()
 
   events=(
     'timeout'
-    'before-sleep'
   )
 
   short=(
@@ -33,10 +32,6 @@ _swayidle()
 
   case "$prev" in
     resume)
-      COMPREPLY=($(compgen -c -- "$cur"))
-      return
-      ;;
-    before-sleep)
       COMPREPLY=($(compgen -c -- "$cur"))
       return
       ;;

@@ -22,8 +22,7 @@ swayidle - Idle manager for Wayland
 	Enable debug output.
 
 *-w*
-	Wait for command to finish executing before continuing, helpful for ensuring
-	that a *before-sleep* command has finished before the system goes to sleep.
+	Wait for command to finish executing before continuing.
 
 	Note: using this option causes swayidle to block until the command finishes.
 
@@ -44,31 +43,6 @@ command line and in the config file.
 	If you specify "resume <resume command>", _resume command_ will be run when
 	there is activity again.
 
-*before-sleep* <command>
-	If built with systemd support, executes _command_ before systemd puts the
-	computer to sleep.
-
-	Note: this only delays sleeping up to the limit set in *logind.conf(5)* by
-	the option InhibitDelayMaxSec. A command that has not finished by then will
-	continue running after resuming from sleep.
-
-*after-resume* <command>
-	If built with systemd support, executes _command_ after logind signals that the
-	computer resumed from sleep.
-
-*lock* <command>
-	If built with systemd support, executes _command_ when logind signals that the
-	session should be locked
-
-*unlock* <command>
-	If built with systemd support, executes _command_ when logind signals that the
-	session should be unlocked
-
-*idlehint* <timeout>
-	If built with systemd support, set IdleHint to indicate an idle logind/elogind
-	session after <timeout> seconds. Adding an idlehint event will also cause
-	swayidle to call SetIdleHint(false) when run, on resume, unlock, etc.
-
 All commands are executed in a shell.
 
 # SIGNALS
@@ -88,12 +62,10 @@ swayidle -w \\
 	timeout 300 'swaylock -f -c 000000' \\
 	timeout 600 'swaymsg "output * dpms off"' \\
 		resume 'swaymsg "output * dpms on"' \\
-	before-sleep 'swaylock -f -c 000000'
 ```
 
 This will lock your screen after 300 seconds of inactivity, then turn off your
 displays after another 300 seconds, and turn your screens back on when resumed.
-It will also lock your screen before your computer goes to sleep.
 
 To make sure swayidle waits for swaylock to lock the screen before it releases the
 inhibition lock, the *-w* options is used in swayidle, and *-f* in swaylock.
