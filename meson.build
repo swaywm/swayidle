@@ -50,23 +50,11 @@ protos = [
 	wl_protocol_dir / 'staging/ext-idle-notify/ext-idle-notify-v1.xml',
 ]
 
-client_protos_src = []
-client_protos_headers = []
+protos_src = []
 foreach xml : protos
-	client_protos_src += wayland_scanner_code.process(xml)
-	client_protos_headers += wayland_scanner_client.process(xml)
+	protos_src += wayland_scanner_code.process(xml)
+	protos_src += wayland_scanner_client.process(xml)
 endforeach
-
-lib_client_protos = static_library(
-	'client_protos',
-	[client_protos_src, client_protos_headers],
-	dependencies: [wayland_client]
-) # for the include directory
-
-client_protos = declare_dependency(
-	link_with: lib_client_protos,
-	sources: client_protos_headers,
-)
 
 conf_data = configuration_data()
 conf_data.set_quoted('SYSCONFDIR', get_option('prefix') / get_option('sysconfdir'))
@@ -82,9 +70,9 @@ configure_file(output: 'config.h', configuration: conf_data)
 executable(
 	'swayidle', [
 		'main.c',
+		protos_src,
 	],
 	dependencies: [
-		client_protos,
 		wayland_client,
 		wayland_server,
 		logind,
