@@ -25,13 +25,14 @@ sysconfdir = get_option('sysconfdir')
 prefix = get_option('prefix')
 add_project_arguments(
 	'-DSYSCONFDIR="@0@"'.format(join_paths(prefix, sysconfdir)),
-	language : 'c')
+	language : 'c',
+)
 
 wayland_client = dependency('wayland-client')
 wayland_protos = dependency('wayland-protocols', version: '>=1.27')
 wayland_server = dependency('wayland-server')
-bash_comp      = dependency('bash-completion', required: false)
-fish_comp      = dependency('fish', required: false)
+bash_comp = dependency('bash-completion', required: false)
+fish_comp = dependency('fish', required: false)
 logind = dependency('lib' + get_option('logind-provider'), required: get_option('logind'))
 
 scdoc = find_program('scdoc', required: get_option('man-pages'))
