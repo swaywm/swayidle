@@ -34,26 +34,20 @@ wayland_server = dependency('wayland-server')
 bash_comp = dependency('bash-completion', required: false)
 fish_comp = dependency('fish', required: false)
 logind = dependency('lib' + get_option('logind-provider'), required: get_option('logind'))
-
 scdoc = find_program('scdoc', required: get_option('man-pages'))
-wayland_scanner = find_program('wayland-scanner')
+wayland_scanner = dependency('wayland-scanner', native: true, version: '>=1.14.91')
+wayland_scanner_prog = find_program(wayland_scanner.get_variable('wayland_scanner'), native: true)
 
 wl_protocol_dir = wayland_protos.get_variable(pkgconfig: 'pkgdatadir', internal: 'pkgdatadir')
 
-if wayland_server.version().version_compare('>=1.14.91')
-	code_type = 'private-code'
-else
-	code_type = 'code'
-endif
-
 wayland_scanner_code = generator(
-	wayland_scanner,
+	wayland_scanner_prog,
 	output: '@BASENAME@-protocol.c',
-	arguments: [code_type, '@INPUT@', '@OUTPUT@'],
+	arguments: ['private-code', '@INPUT@', '@OUTPUT@'],
 )
 
 wayland_scanner_client = generator(
-	wayland_scanner,
+	wayland_scanner_prog,
 	output: '@BASENAME@-client-protocol.h',
 	arguments: ['client-header', '@INPUT@', '@OUTPUT@'],
 )
