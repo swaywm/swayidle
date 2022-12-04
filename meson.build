@@ -25,7 +25,7 @@ sysconfdir = get_option('sysconfdir')
 prefix = get_option('prefix')
 add_project_arguments(
 	'-DSYSCONFDIR="@0@"'.format(join_paths(prefix, sysconfdir)),
-	language : 'c',
+	language: 'c',
 )
 
 wayland_client = dependency('wayland-client')
@@ -75,18 +75,11 @@ client_protos = declare_dependency(
 	sources: client_protos_headers,
 )
 
-swayidle_deps = [
-	client_protos,
-	wayland_client,
-	wayland_server,
-]
-
 conf_data = configuration_data()
 conf_data.set10('HAVE_SYSTEMD', false)
 conf_data.set10('HAVE_ELOGIND', false)
 
 if logind.found()
-	swayidle_deps += logind
 	conf_data.set10('HAVE_' + get_option('logind-provider').to_upper(), true)
 endif
 
@@ -96,7 +89,12 @@ executable(
 	'swayidle', [
 		'main.c',
 	],
-	dependencies: swayidle_deps,
+	dependencies: [
+		client_protos,
+		wayland_client,
+		wayland_server,
+		logind,
+	],
 	install: true,
 )
 
