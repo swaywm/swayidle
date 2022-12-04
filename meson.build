@@ -38,7 +38,7 @@ scdoc = find_program('scdoc', required: get_option('man-pages'))
 wayland_scanner = dependency('wayland-scanner', native: true, version: '>=1.14.91')
 wayland_scanner_prog = find_program(wayland_scanner.get_variable('wayland_scanner'), native: true)
 
-wl_protocol_dir = wayland_protos.get_variable(pkgconfig: 'pkgdatadir', internal: 'pkgdatadir')
+wl_protocol_dir = wayland_protos.get_variable('pkgdatadir')
 
 wayland_scanner_code = generator(
 	wayland_scanner_prog,
