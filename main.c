@@ -15,7 +15,6 @@
 #include <wayland-util.h>
 #include <wordexp.h>
 #include "config.h"
-#include "idle-client-protocol.h"
 #include "ext-idle-notify-v1-client-protocol.h"
 #include "log.h"
 #if HAVE_SYSTEMD
@@ -26,7 +25,6 @@
 #include <elogind/sd-login.h>
 #endif
 
-static struct org_kde_kwin_idle *kde_idle_manager = NULL;
 static struct ext_idle_notifier_v1 *idle_notifier = NULL;
 static struct wl_seat *seat = NULL;
 
@@ -48,7 +46,6 @@ struct swayidle_state {
 struct swayidle_timeout_cmd {
 	struct wl_list link;
 	int timeout, registered_timeout;
-	struct org_kde_kwin_idle_timeout *kde_idle_timer;
 	struct ext_idle_notification_v1 *idle_notification;
 	char *idle_cmd;
 	char *resume_cmd;
@@ -545,10 +542,7 @@ static const struct wl_seat_listener wl_seat_listener = {
 
 static void handle_global(void *data, struct wl_registry *registry,
 		uint32_t name, const char *interface, uint32_t version) {
-	if (strcmp(interface, org_kde_kwin_idle_interface.name) == 0) {
-		kde_idle_manager =
-			wl_registry_bind(registry, name, &org_kde_kwin_idle_interface, 1);
-	} else if (strcmp(interface, ext_idle_notifier_v1_interface.name) == 0) {
+	if (strcmp(interface, ext_idle_notifier_v1_interface.name) == 0) {
 		idle_notifier =
 			wl_registry_bind(registry, name, &ext_idle_notifier_v1_interface, 1);
 	} else if (strcmp(interface, wl_seat_interface.name) == 0) {
@@ -570,15 +564,9 @@ static const struct wl_registry_listener registry_listener = {
 	.global_remove = handle_global_remove,
 };
 
-static const struct org_kde_kwin_idle_timeout_listener kde_idle_timer_listener;
 static const struct ext_idle_notification_v1_listener idle_notification_listener;
 
 static void destroy_cmd_timer(struct swayidle_timeout_cmd *cmd) {
-	if (cmd->kde_idle_timer != NULL) {
-		swayidle_log(LOG_DEBUG, "Release idle timer");
-		org_kde_kwin_idle_timeout_release(cmd->kde_idle_timer);
-		cmd->kde_idle_timer = NULL;
-	}
 	if (cmd->idle_notification != NULL) {
 		ext_idle_notification_v1_destroy(cmd->idle_notification);
 		cmd->idle_notification = NULL;
@@ -594,17 +582,10 @@ static void register_timeout(struct swayidle_timeout_cmd *cmd,
 		return;
 	}
 	swayidle_log(LOG_DEBUG, "Register with timeout: %d", timeout);
-	if (idle_notifier != NULL) {
-		cmd->idle_notification =
-			ext_idle_notifier_v1_get_idle_notification(idle_notifier, timeout, seat);
-		ext_idle_notification_v1_add_listener(cmd->idle_notification,
-			&idle_notification_listener, cmd);
-	} else {
-		cmd->kde_idle_timer =
-			org_kde_kwin_idle_get_idle_timeout(kde_idle_manager, seat, timeout);
-		org_kde_kwin_idle_timeout_add_listener(cmd->kde_idle_timer,
-			&kde_idle_timer_listener, cmd);
-	}
+	cmd->idle_notification =
+		ext_idle_notifier_v1_get_idle_notification(idle_notifier, timeout, seat);
+	ext_idle_notification_v1_add_listener(cmd->idle_notification,
+		&idle_notification_listener, cmd);
 	cmd->registered_timeout = timeout;
 }
 
@@ -645,7 +626,8 @@ static void disable_timeouts(void) {
 }
 #endif
 
-static void handle_idled(struct swayidle_timeout_cmd *cmd) {
+static void handle_idled(void *data, struct ext_idle_notification_v1 *notif) {
+	struct swayidle_timeout_cmd *cmd = data;
 	cmd->resume_pending = true;
 	swayidle_log(LOG_DEBUG, "idle state");
 #if HAVE_SYSTEMD || HAVE_ELOGIND
@@ -658,7 +640,8 @@ static void handle_idled(struct swayidle_timeout_cmd *cmd) {
 	}
 }
 
-static void handle_resumed(struct swayidle_timeout_cmd *cmd) {
+static void handle_resumed(void *data, struct ext_idle_notification_v1 *notif) {
+	struct swayidle_timeout_cmd *cmd = data;
 	cmd->resume_pending = false;
 	swayidle_log(LOG_DEBUG, "active state");
 	if (cmd->registered_timeout != cmd->timeout) {
@@ -674,34 +657,9 @@ static void handle_resumed(struct swayidle_timeout_cmd *cmd) {
 	}
 }
 
-static void kde_handle_idle(void *data, struct org_kde_kwin_idle_timeout *timer) {
-	struct swayidle_timeout_cmd *cmd = data;
-	handle_idled(cmd);
-}
-
-static void kde_handle_resumed(void *data, struct org_kde_kwin_idle_timeout *timer) {
-	struct swayidle_timeout_cmd *cmd = data;
-	handle_resumed(cmd);
-}
-
-static const struct org_kde_kwin_idle_timeout_listener kde_idle_timer_listener = {
-	.idle = kde_handle_idle,
-	.resumed = kde_handle_resumed,
-};
-
-static void ext_handle_idled(void *data, struct ext_idle_notification_v1 *notif) {
-	struct swayidle_timeout_cmd *cmd = data;
-	handle_idled(cmd);
-}
-
-static void ext_handle_resumed(void *data, struct ext_idle_notification_v1 *notif) {
-	struct swayidle_timeout_cmd *cmd = data;
-	handle_resumed(cmd);
-}
-
 static const struct ext_idle_notification_v1_listener idle_notification_listener = {
-	.idled = ext_handle_idled,
-	.resumed = ext_handle_resumed,
+	.idled = handle_idled,
+	.resumed = handle_resumed,
 };
 
 static char *parse_command(int argc, char **argv) {
@@ -934,7 +892,7 @@ static int handle_signal(int sig, void *data) {
 		swayidle_log(LOG_DEBUG, "Got SIGTERM");
 		wl_list_for_each(cmd, &state.timeout_cmds, link) {
 			if (cmd->resume_pending) {
-				handle_resumed(cmd);
+				handle_resumed(cmd, NULL);
 			}
 		}
 		sway_terminate(0);
@@ -1112,8 +1070,8 @@ int main(int argc, char *argv[]) {
 		}
 	}
 
-	if (kde_idle_manager == NULL && idle_notifier == NULL) {
-		swayidle_log(LOG_ERROR, "Display doesn't support idle protocol");
+	if (idle_notifier == NULL) {
+		swayidle_log(LOG_ERROR, "Compositor doesn't support idle protocol");
 		swayidle_finish();
 		return -4;
 	}
