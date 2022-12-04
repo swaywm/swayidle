@@ -63,12 +63,13 @@ if logind.found()
 	conf_data.set10('HAVE_' + get_option('logind-provider').to_upper(), true)
 endif
 
-configure_file(output: 'config.h', configuration: conf_data)
+config_header = configure_file(output: 'config.h', configuration: conf_data)
 
 executable(
 	'swayidle', [
 		'main.c',
 		protos_src,
+		config_header,
 	],
 	dependencies: [
 		wayland_client,
