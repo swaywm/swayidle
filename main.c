@@ -623,7 +623,7 @@ static void enable_timeouts(void) {
 	state.timeouts_enabled = true;
 	struct swayidle_timeout_cmd *cmd;
 	wl_list_for_each(cmd, &state.timeout_cmds, link) {
-		if (cmd->idle_timer == NULL || !cmd->resume_pending) {
+		if ((cmd->idle_notification == NULL && cmd->kde_idle_timer == NULL) || !cmd->resume_pending) {
 			register_timeout(cmd, cmd->timeout);
 		}
 	}
