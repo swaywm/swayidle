@@ -935,77 +935,43 @@ static int display_event(int fd, uint32_t mask, void *data) {
 }
 
 static char *get_config_path(void) {
-#if HAVE_WORDEXP
-	static char *config_paths[3] = {
-		"$XDG_CONFIG_HOME/swayidle/config",
-		"$HOME/.swayidle/config",
-		SYSCONFDIR "/swayidle/config",
+	char *path = NULL;
+	const char *home = getenv("HOME");
+	size_t size_fallback = 1 + strlen(home) + strlen("/.config");
+	char *config_home_fallback = calloc(size_fallback, sizeof(char));
+	snprintf(config_home_fallback, size_fallback, "%s/.config", home);
+
+	const char *config_home = getenv("XDG_CONFIG_HOME");
+	if (config_home == NULL || config_home[0] == '\0') {
+		config_home = config_home_fallback;
+	}
+
+	struct config_path {
+		const char *prefix;
+		const char *config_folder;
 	};
 
-	char *config_home = getenv("XDG_CONFIG_HOME");
+	struct config_path config_paths[] = {
+		{ .prefix = home, .config_folder = ".swayidle"},
+		{ .prefix = config_home, .config_folder = "swayidle"},
+		{ .prefix = SYSCONFDIR, .config_folder = "swayidle"},
+	};
 
-	if (!config_home || config_home[0] == '\n') {
-		config_paths[0] = "$HOME/.config/swayidle/config";
-	}
-
-	wordexp_t p;
-	char *path;
-	for (size_t i = 0; i < sizeof(config_paths) / sizeof(char *); ++i) {
-		if (wordexp(config_paths[i], &p, 0) == 0) {
-			path = strdup(p.we_wordv[0]);
-			wordfree(&p);
-			if (path && access(path, R_OK) == 0) {
-				return path;
-			}
-			free(path);
+	size_t num_config_paths = sizeof(config_paths)/sizeof(config_paths[0]);
+	for (size_t i = 0; i < num_config_paths; i++) {
+		path = config_path(config_paths[i].prefix, config_paths[i].config_folder);
+		if (!path) {
+			continue;
 		}
-	}
-#else
-	char *home = getenv("HOME");
-	char *path;
-	int n, len;
-	if (home) {
-		len = strlen(home) + strlen("/.swayidle/config") + 1;
-		path = malloc(len);
-		if (path == NULL)
-			return NULL;
-		n = snprintf(path, len, "%s/.swayidle/config", home);
-		if (n < len && access(path, R_OK) == 0)
-			return path;
+		if (file_exists(path)) {
+			break;
+		}
 		free(path);
-		char *config_home = getenv("XDG_CONFIG_HOME");
-		if (!config_home || config_home[0] == '\0') {
-			len = strlen(home) + strlen("/.config/swayidle/config") + 1;
-			path = malloc(len);
-			if (path == NULL)
-				return NULL;
-			n = snprintf(path, len, "%s/.config/swayidle/config", home);
-			if (n < len && access(path, R_OK) == 0)
-				return path;
-			free(path);
-		} else {
-			len = strlen(config_home) + strlen("/swayidle/config") + 1;
-			path = malloc(len);
-			if (path == NULL)
-				return NULL;
-			n = snprintf(path, len, "%s/swayidle/config", config_home);
-			if (n < len && access(path, R_OK) == 0)
-				return path;
-			free(path);
-		}
+		path = NULL;
 	}
-	len = strlen(SYSCONFDIR "/swayidle/config") + 1;
-	path = malloc(len);
-	if (path == NULL)
-		return NULL;
-	n = snprintf(path, len, "%s/swayidle/config", SYSCONFDIR);
-	if (n < len && access(path, R_OK) == 0)
-		return path;
-	free(path);
 
-#endif
-
-	return NULL;
+	free(config_home_fallback);
+	return path;
 }
 
 #if !HAVE_WORDEXP
