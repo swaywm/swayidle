@@ -934,6 +934,24 @@ static int display_event(int fd, uint32_t mask, void *data) {
 	return count;
 }
 
+static bool file_exists(const char *path) {
+	return path && access(path, R_OK) != -1;
+}
+
+
+static char *config_path(const char *prefix, const char *config_folder) {
+	if (!prefix || !prefix[0] || !config_folder || !config_folder[0]) {
+		return NULL;
+	}
+
+	const char *filename = "config";
+
+	size_t size = 3 + strlen(prefix) + strlen(config_folder) + strlen(filename);
+	char *path = calloc(size, sizeof(char));
+	snprintf(path, size, "%s/%s/%s", prefix, config_folder, filename);
+	return path;
+}
+
 static char *get_config_path(void) {
 	char *path = NULL;
 	const char *home = getenv("HOME");
