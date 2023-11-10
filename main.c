@@ -1,4 +1,8 @@
+#include "config.h"
+#if HAVE_WORDEXP
 #define _POSIX_C_SOURCE 200809L
+#include <wordexp.h>
+#endif
 #include <errno.h>
 #include <fcntl.h>
 #include <signal.h>
@@ -13,8 +17,6 @@
 #include <wayland-client.h>
 #include <wayland-server.h>
 #include <wayland-util.h>
-#include <wordexp.h>
-#include "config.h"
 #include "ext-idle-notify-v1-client-protocol.h"
 #include "log.h"
 #if HAVE_SYSTEMD
@@ -933,6 +935,7 @@ static int display_event(int fd, uint32_t mask, void *data) {
 }
 
 static char *get_config_path(void) {
+#if HAVE_WORDEXP
 	static char *config_paths[3] = {
 		"$XDG_CONFIG_HOME/swayidle/config",
 		"$HOME/.swayidle/config",
@@ -957,9 +960,116 @@ static char *get_config_path(void) {
 			free(path);
 		}
 	}
+#else
+	char *home = getenv("HOME");
+	char *path;
+	int n, len;
+	if (home) {
+		len = strlen(home) + strlen("/.swayidle/config") + 1;
+		path = malloc(len);
+		if (path == NULL)
+			return NULL;
+		n = snprintf(path, len, "%s/.swayidle/config", home);
+		if (n < len && access(path, R_OK) == 0)
+			return path;
+		free(path);
+		char *config_home = getenv("XDG_CONFIG_HOME");
+		if (!config_home || config_home[0] == '\0') {
+			len = strlen(home) + strlen("/.config/swayidle/config") + 1;
+			path = malloc(len);
+			if (path == NULL)
+				return NULL;
+			n = snprintf(path, len, "%s/.config/swayidle/config", home);
+			if (n < len && access(path, R_OK) == 0)
+				return path;
+			free(path);
+		} else {
+			len = strlen(config_home) + strlen("/swayidle/config") + 1;
+			path = malloc(len);
+			if (path == NULL)
+				return NULL;
+			n = snprintf(path, len, "%s/swayidle/config", config_home);
+			if (n < len && access(path, R_OK) == 0)
+				return path;
+			free(path);
+		}
+	}
+	len = strlen(SYSCONFDIR "/swayidle/config") + 1;
+	path = malloc(len);
+	if (path == NULL)
+		return NULL;
+	n = snprintf(path, len, "%s/swayidle/config", SYSCONFDIR);
+	if (n < len && access(path, R_OK) == 0)
+		return path;
+	free(path);
+
+#endif
 
 	return NULL;
 }
+
+#if !HAVE_WORDEXP
+char ** parse_line_like_wordexp_does(const char* str, int* nargs) {
+	char **args = calloc (6, sizeof(char*));
+	char *q, *p = strchr(str, ' ');
+	char *junk = " \t";
+	int r, len = p - str;
+	size_t span;
+	if (args == NULL)
+		return NULL;
+	*nargs = 0;
+	/* consume leading spaces/tabs */
+	span = strspn(p, junk);
+	/* 'timeout' string */
+	r = asprintf(&args[0], "%.*s", len, str);
+	if (r == -1 || r != len)
+		return NULL;
+	q = strchr(p + span, ' ');
+	len = q - p - 1;
+	/* timeout value => no trailing \n! */
+	r = asprintf(&args[1], "%.*s", len, p + span);
+	if (r == -1 || r != len)
+		return NULL;
+	/* look for next quotes, should be the command */
+	p = strchr(q, '\'');
+	q = strchr(p + 1, '\'');
+	len = q - p - 1;
+	r = asprintf(&args[2], "%.*s", len, p + 1);
+	if (r == -1 || r != len)
+		return NULL;
+	q++;
+	/* have we reached the end of string ? */
+	if (*q == '\0') {
+		args[3] = NULL;
+		*nargs = 3;
+	} else {
+		/* consume eventual trailing spaces */
+		span = strspn(q, junk);
+		q += span;
+		if (*q == '\0') {
+			args[3] = NULL;
+			*nargs = 3;
+		} else {
+			p = strchr(q, ' ');
+			len = p - q;
+			/* 'resume' string */
+			r = asprintf(&args[3], "%.*s", len, q);
+			if (r == -1 || r != len)
+				return NULL;
+			/* look for next quotes, should be the resume command */
+			p = strchr(q, '\'');
+			q = strchr(p + 1, '\'');
+			len = q - p - 1;
+			r = asprintf(&args[4], "%.*s", len, p + 1);
+			if (r == -1 || r != len)
+				return NULL;
+			args[5] = NULL;
+			*nargs = 5;
+		}
+	}
+	return args;
+}
+#endif
 
 static int load_config(const char *config_path) {
 	FILE *f = fopen(config_path, "r");
@@ -986,6 +1096,7 @@ static int load_config(const char *config_path) {
 			i++;
 		}
 
+#if HAVE_WORDEXP
 		wordexp_t p;
 		wordexp(line, &p, 0);
 		if (strncmp("timeout", line, i) == 0) {
@@ -1007,6 +1118,24 @@ static int load_config(const char *config_path) {
 			return -EINVAL;
 		}
 		wordfree(&p);
+#else
+		if (strncmp("timeout", line, i) == 0) {
+			int nargs;
+			char **args = parse_line_like_wordexp_does(line, &nargs);
+			if (args)
+				parse_timeout(nargs, args);
+			else {
+				swayidle_log(LOG_ERROR, "failed parsing \"%s\" in line %zu", line, lineno);
+				free(line);
+				return -EINVAL;
+			}
+		} else {
+			line[i] = 0;
+			swayidle_log(LOG_ERROR, "Unexpected keyword \"%s\" in line %zu", line, lineno);
+			free(line);
+			return -EINVAL;
+		}
+#endif
 	}
 	free(line);
 	fclose(f);
