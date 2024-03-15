@@ -11,7 +11,7 @@ swayidle - Idle manager for Wayland
 # OPTIONS
 
 *-C* <path>
-	The config file to use. By default, the following paths are checked in the following order: $XDG_CONFIG_HOME/swayidle/config, $HOME/swayidle/config
+	The config file to use. By default, the following paths are checked in the following order: $XDG_CONFIG_HOME/swayidle/config, $HOME/swayidle/config.
 	Config file entries are events as described in the EVENTS section.
 	Specifying events in the config and as arguments is not mutually exclusive.
 
