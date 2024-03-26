@@ -53,10 +53,12 @@ foreach xml : protos
 	protos_src += wayland_scanner_client.process(xml)
 endforeach
 
+cc = meson.get_compiler('c')
 conf_data = configuration_data()
 conf_data.set_quoted('SYSCONFDIR', get_option('prefix') / get_option('sysconfdir'))
 conf_data.set10('HAVE_SYSTEMD', false)
 conf_data.set10('HAVE_ELOGIND', false)
+conf_data.set10('HAVE_WORDEXP', cc.check_header('wordexp.h'))
 
 if logind.found()
 	conf_data.set10('HAVE_' + get_option('logind-provider').to_upper(), true)
