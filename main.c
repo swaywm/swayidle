@@ -153,6 +153,7 @@ static void cmd_exec(char *param) {
 			signal(SIGINT, SIG_DFL);
 			signal(SIGTERM, SIG_DFL);
 			signal(SIGUSR1, SIG_DFL);
+			signal(SIGUSR2, SIG_DFL);
 
 			char *const cmd[] = { "sh", "-c", param, NULL, };
 			execvp(cmd[0], cmd);
@@ -903,6 +904,16 @@ static int handle_signal(int sig, void *data) {
 			register_timeout(cmd, 0);
 		}
 		return 1;
+	case SIGUSR2:
+		swayidle_log(LOG_DEBUG, "Got SIGUSR2");
+		wl_list_for_each(cmd, &state.timeout_cmds, link) {
+			if (cmd->resume_pending) {
+				// Re-register to reset timeouts
+				cmd->registered_timeout = -1;
+				handle_resumed(cmd, NULL);
+			}
+		}
+		return 1;
 	}
 	abort(); // not reached
 }
@@ -1048,6 +1059,7 @@ int main(int argc, char *argv[]) {
 	wl_event_loop_add_signal(state.event_loop, SIGINT, handle_signal, NULL);
 	wl_event_loop_add_signal(state.event_loop, SIGTERM, handle_signal, NULL);
 	wl_event_loop_add_signal(state.event_loop, SIGUSR1, handle_signal, NULL);
+	wl_event_loop_add_signal(state.event_loop, SIGUSR2, handle_signal, NULL);
 
 	state.display = wl_display_connect(NULL);
 	if (state.display == NULL) {
