@@ -33,6 +33,8 @@ struct swayidle_state {
 	struct wl_event_loop *event_loop;
 	struct wl_list timeout_cmds; // struct swayidle_timeout_cmd *
 	struct wl_list seats;
+	struct wl_list screensaver_inhibitors;
+	bool logind_inhibited; // Is there a logind idle inhibitor?
 	char *seat_name;
 	char *before_sleep_cmd;
 	char *after_resume_cmd;
@@ -41,6 +43,7 @@ struct swayidle_state {
 	bool logind_idlehint;
 	bool timeouts_enabled;
 	bool wait;
+	bool screensaver;
 } state;
 
 struct swayidle_timeout_cmd {
@@ -59,6 +62,13 @@ struct seat {
 
 	char *name;
 	uint32_t capabilities;
+};
+
+// A peer that is inhibiting idle using org.freedesktop.ScreenSaver
+struct screensaver_inhibitor {
+	struct wl_list link;
+	uint32_t cookie;
+	char *peer;
 };
 
 static const char *verbosity_colors[] = {
@@ -115,17 +125,26 @@ static void swayidle_init() {
 	memset(&state, 0, sizeof(state));
 	wl_list_init(&state.timeout_cmds);
 	wl_list_init(&state.seats);
+	wl_list_init(&state.screensaver_inhibitors);
 }
 
 static void swayidle_finish() {
 
 	struct swayidle_timeout_cmd *cmd;
-	struct swayidle_timeout_cmd *tmp;
-	wl_list_for_each_safe(cmd, tmp, &state.timeout_cmds, link) {
+	struct swayidle_timeout_cmd *cmd_tmp;
+	wl_list_for_each_safe(cmd, cmd_tmp, &state.timeout_cmds, link) {
 		wl_list_remove(&cmd->link);
 		free(cmd->idle_cmd);
 		free(cmd->resume_cmd);
 		free(cmd);
+	}
+
+	struct screensaver_inhibitor *inhibitor;
+	struct screensaver_inhibitor *inhibitor_tmp;
+	wl_list_for_each_safe(inhibitor, inhibitor_tmp, &state.screensaver_inhibitors, link) {
+		wl_list_remove(&inhibitor->link);
+		free(inhibitor->peer);
+		free(inhibitor);
 	}
 
 	free(state.after_resume_cmd);
@@ -184,11 +203,15 @@ static void cmd_exec(char *param) {
 #define DBUS_LOGIND_MANAGER_INTERFACE "org.freedesktop.login1.Manager"
 #define DBUS_LOGIND_SESSION_INTERFACE "org.freedesktop.login1.Session"
 
-static void enable_timeouts(void);
-static void disable_timeouts(void);
+#define DBUS_SCREENSAVER_SERVICE "org.freedesktop.ScreenSaver"
+#define DBUS_SCREENSAVER_INTERFACE "org.freedesktop.ScreenSaver"
+#define DBUS_SCREENSAVER_PATH "/org/freedesktop/ScreenSaver"
+
+static void update_timeouts(void);
 
 static int sleep_lock_fd = -1;
-static struct sd_bus *bus = NULL;
+static struct sd_bus *bus_user = NULL;
+static struct sd_bus *bus_sys = NULL;
 static char *session_name = NULL;
 
 static void acquire_inhibitor_lock(const char *type, const char *mode,
@@ -198,7 +221,7 @@ static void acquire_inhibitor_lock(const char *type, const char *mode,
 	char why[35];
 
 	sprintf(why, "Swayidle is preventing %s", type);
-	int ret = sd_bus_call_method(bus, DBUS_LOGIND_SERVICE, DBUS_LOGIND_PATH,
+	int ret = sd_bus_call_method(bus_sys, DBUS_LOGIND_SERVICE, DBUS_LOGIND_PATH,
 			DBUS_LOGIND_MANAGER_INTERFACE, "Inhibit", &error, &msg,
 			"ssss", type, "swayidle", why, mode);
 	if (ret < 0) {
@@ -238,7 +261,7 @@ static void set_idle_hint(bool hint) {
 	swayidle_log(LOG_DEBUG, "SetIdleHint %d", hint);
 	sd_bus_message *msg = NULL;
 	sd_bus_error error = SD_BUS_ERROR_NULL;
-	int ret = sd_bus_call_method(bus, DBUS_LOGIND_SERVICE,
+	int ret = sd_bus_call_method(bus_sys, DBUS_LOGIND_SERVICE,
 			session_name, DBUS_LOGIND_SESSION_INTERFACE, "SetIdleHint",
 			&error, &msg, "b", hint);
 	if (ret < 0) {
@@ -256,7 +279,7 @@ static bool get_logind_idle_inhibit(void) {
 
 	sd_bus_message *reply = NULL;
 
-	int ret = sd_bus_get_property(bus, DBUS_LOGIND_SERVICE, DBUS_LOGIND_PATH,
+	int ret = sd_bus_get_property(bus_sys, DBUS_LOGIND_SERVICE, DBUS_LOGIND_PATH,
 			DBUS_LOGIND_MANAGER_INTERFACE, "BlockInhibited", NULL, &reply, "s");
 	if (ret < 0) {
 		goto error;
@@ -365,11 +388,13 @@ static int handle_property_changed(sd_bus_message *msg, void *userdata,
 			if (!strcmp(prop, "BlockInhibited")) {
 				if (get_logind_idle_inhibit()) {
 					swayidle_log(LOG_DEBUG, "Logind idle inhibitor found");
-					disable_timeouts();
+					state.logind_inhibited = true;
 				} else {
 					swayidle_log(LOG_DEBUG, "Logind idle inhibitor not found");
-					enable_timeouts();
+					state.logind_inhibited = false;
 				}
+				update_timeouts();
+
 				return 0;
 			} else {
 				ret = sd_bus_message_skip(msg, "v");
@@ -429,7 +454,7 @@ static void set_session(void) {
 	sd_bus_error error = SD_BUS_ERROR_NULL;
 	const char *session_name_tmp;
 
-	int ret = sd_bus_call_method(bus, DBUS_LOGIND_SERVICE, DBUS_LOGIND_PATH,
+	int ret = sd_bus_call_method(bus_sys, DBUS_LOGIND_SERVICE, DBUS_LOGIND_PATH,
 			DBUS_LOGIND_MANAGER_INTERFACE, "GetSession",
 			&error, &msg, "s", "auto");
 	if (ret < 0) {
@@ -438,7 +463,7 @@ static void set_session(void) {
 		sd_bus_error_free(&error);
 		sd_bus_message_unref(msg);
 
-		ret = sd_bus_call_method(bus, DBUS_LOGIND_SERVICE, DBUS_LOGIND_PATH,
+		ret = sd_bus_call_method(bus_sys, DBUS_LOGIND_SERVICE, DBUS_LOGIND_PATH,
 				DBUS_LOGIND_MANAGER_INTERFACE, "GetSessionByPID",
 				&error, &msg, "u", getpid());
 		if (ret < 0) {
@@ -464,23 +489,35 @@ cleanup:
 	sd_bus_message_unref(msg);
 }
 
-static void connect_to_bus(void) {
-	int ret = sd_bus_default_system(&bus);
+static void connect_to_system_bus(void) {
+	int ret = sd_bus_default_system(&bus_sys);
 	if (ret < 0) {
 		errno = -ret;
-		swayidle_log_errno(LOG_ERROR, "Failed to open D-Bus connection");
+		swayidle_log_errno(LOG_ERROR, "Failed to open system D-Bus connection");
 		return;
 	}
 	struct wl_event_source *source = wl_event_loop_add_fd(state.event_loop,
-		sd_bus_get_fd(bus), WL_EVENT_READABLE, dbus_event, bus);
+		sd_bus_get_fd(bus_sys), WL_EVENT_READABLE, dbus_event, bus_sys);
 	wl_event_source_check(source);
 	set_session();
 }
 
+static void connect_to_user_bus(void) {
+	int ret = sd_bus_default_user(&bus_user);
+	if (ret < 0) {
+		errno = -ret;
+		swayidle_log_errno(LOG_ERROR, "Failed to open user D-Bus connection");
+		return;
+	}
+	struct wl_event_source *source = wl_event_loop_add_fd(state.event_loop,
+		sd_bus_get_fd(bus_user), WL_EVENT_READABLE, dbus_event, bus_user);
+	wl_event_source_check(source);
+}
+
 static void setup_sleep_listener(void) {
-	int ret = sd_bus_match_signal(bus, NULL, DBUS_LOGIND_SERVICE,
-                DBUS_LOGIND_PATH, DBUS_LOGIND_MANAGER_INTERFACE,
-                "PrepareForSleep", prepare_for_sleep, NULL);
+	int ret = sd_bus_match_signal(bus_sys, NULL, DBUS_LOGIND_SERVICE,
+		DBUS_LOGIND_PATH, DBUS_LOGIND_MANAGER_INTERFACE,
+		"PrepareForSleep", prepare_for_sleep, NULL);
 	if (ret < 0) {
 		errno = -ret;
 		swayidle_log_errno(LOG_ERROR, "Failed to add D-Bus signal match : sleep");
@@ -490,9 +527,9 @@ static void setup_sleep_listener(void) {
 }
 
 static void setup_lock_listener(void) {
-	int ret = sd_bus_match_signal(bus, NULL, DBUS_LOGIND_SERVICE,
-                session_name, DBUS_LOGIND_SESSION_INTERFACE,
-                "Lock", handle_lock, NULL);
+	int ret = sd_bus_match_signal(bus_sys, NULL, DBUS_LOGIND_SERVICE,
+		session_name, DBUS_LOGIND_SESSION_INTERFACE,
+		"Lock", handle_lock, NULL);
 	if (ret < 0) {
 		errno = -ret;
 		swayidle_log_errno(LOG_ERROR, "Failed to add D-Bus signal match : lock");
@@ -501,9 +538,9 @@ static void setup_lock_listener(void) {
 }
 
 static void setup_unlock_listener(void) {
-	int ret = sd_bus_match_signal(bus, NULL, DBUS_LOGIND_SERVICE,
-                session_name, DBUS_LOGIND_SESSION_INTERFACE,
-                "Unlock", handle_unlock, NULL);
+	int ret = sd_bus_match_signal(bus_sys, NULL, DBUS_LOGIND_SERVICE,
+		session_name, DBUS_LOGIND_SESSION_INTERFACE,
+		"Unlock", handle_unlock, NULL);
 	if (ret < 0) {
 		errno = -ret;
 		swayidle_log_errno(LOG_ERROR, "Failed to add D-Bus signal match : unlock");
@@ -512,14 +549,204 @@ static void setup_unlock_listener(void) {
 }
 
 static void setup_property_changed_listener(void) {
-	int ret = sd_bus_match_signal(bus, NULL, NULL,
-                DBUS_LOGIND_PATH, "org.freedesktop.DBus.Properties",
-                "PropertiesChanged", handle_property_changed, NULL);
+	int ret = sd_bus_match_signal(bus_sys, NULL, NULL,
+		DBUS_LOGIND_PATH, "org.freedesktop.DBus.Properties",
+		"PropertiesChanged", handle_property_changed, NULL);
 	if (ret < 0) {
 		errno = -ret;
 		swayidle_log_errno(LOG_ERROR, "Failed to add D-Bus signal match : property changed");
 		return;
 	}
+}
+
+static uint32_t handle_screensaver_inhibit(const char *sender, const char *app_name, const char *reason) {
+	swayidle_log(LOG_INFO, DBUS_SCREENSAVER_INTERFACE ".Inhibit('%s', '%s') from %s", app_name, reason, sender);
+
+	uint32_t cookie;
+	bool cookie_ok = false;
+	while (!cookie_ok) {
+		cookie = rand();
+		cookie_ok = cookie != 0; // cookie of 0 is not allowed
+
+		struct screensaver_inhibitor *inhibitor;
+		wl_list_for_each(inhibitor, &state.screensaver_inhibitors, link) {
+			if (inhibitor->cookie == cookie && strcmp(inhibitor->peer, sender) == 0) {
+				cookie_ok = false;
+			}
+		}
+	}
+
+	struct screensaver_inhibitor *inhibitor = calloc(1, sizeof(*inhibitor));
+	*inhibitor = (struct screensaver_inhibitor) {
+		.cookie = cookie,
+		.peer = strdup(sender),
+	};
+
+	wl_list_insert(&state.screensaver_inhibitors, &inhibitor->link);
+
+	update_timeouts();
+
+	return cookie;
+}
+
+static void handle_screensaver_uninhibit(const char *sender, uint32_t cookie) {
+	swayidle_log(LOG_INFO, DBUS_SCREENSAVER_INTERFACE ".UnInhibit(%" PRIu32 ") from %s", cookie, sender);
+
+	int count = 0;
+
+	struct screensaver_inhibitor *inhibitor = NULL;
+	struct screensaver_inhibitor *tmp = NULL;
+	wl_list_for_each_safe(inhibitor, tmp, &state.screensaver_inhibitors, link) {
+		if (inhibitor->cookie == cookie && strcmp(inhibitor->peer, sender) == 0) {
+			swayidle_log(LOG_DEBUG, "Removing screensaver inhibitor: peer='%s' cookie=%"PRIu32, inhibitor->peer, inhibitor->cookie);
+			count += 1;
+			wl_list_remove(&inhibitor->link);
+			free(inhibitor->peer);
+			free(inhibitor);
+		}
+	}
+	if (count == 0) {
+		swayidle_log(LOG_INFO, "No matching inhibitor found for UnInhibit method call");
+	}
+
+	update_timeouts();
+}
+
+static int handle_screensaver_method(sd_bus_message *m, void *userdata, sd_bus_error *error) {
+	if (sd_bus_message_is_method_call(m, DBUS_SCREENSAVER_INTERFACE, "Inhibit")) {
+		const char *app_name = NULL;
+		const char *reason = NULL;
+		const char *sender = NULL;
+		int ret = sd_bus_message_read(m, "s", &app_name);
+		if (ret < 0) {
+			errno = -ret;
+			swayidle_log_errno(LOG_ERROR, "Failed to get application_name from Inhibit call");
+			return ret;
+		}
+
+		ret = sd_bus_message_read(m, "s", &reason);
+		if (ret < 0) {
+			errno = -ret;
+			swayidle_log_errno(LOG_ERROR, "Failed to get reason_for_inhibit from Inhibit call");
+			return ret;
+		}
+
+		sender = sd_bus_message_get_sender(m);
+
+		uint32_t out = handle_screensaver_inhibit(sender, app_name, reason);
+		sd_bus_reply_method_return(m, "u", out);
+	} else if (sd_bus_message_is_method_call(m, DBUS_SCREENSAVER_INTERFACE, "UnInhibit")) {
+		uint32_t cookie = 0;
+		const char *sender = NULL;
+		int ret = sd_bus_message_read(m, "u", &cookie);
+		if (ret < 0) {
+			errno = -ret;
+			swayidle_log_errno(LOG_ERROR, "Failed to get cookie from UnInhibit call");
+			return ret;
+		}
+
+		sender = sd_bus_message_get_sender(m);
+
+		handle_screensaver_uninhibit(sender, cookie);
+		sd_bus_reply_method_return(m, "");
+	} else {
+		swayidle_log(LOG_ERROR, "screensaver method handler called with unknown sd_bus_message");
+		return 0;
+	}
+	return 1;
+}
+
+static int handle_name_owner_changed(sd_bus_message *m, void *userdata, sd_bus_error *error) {
+	const char *name;
+	const char *old_owner;
+	const char *new_owner;
+	int ret;
+
+	ret = sd_bus_message_read(m, "s", &name);
+	if (ret < 0) {
+		errno = -ret;
+		swayidle_log_errno(LOG_ERROR, "Failed to get name from NameOwnerChanged");
+		return 0;
+	}
+
+	ret = sd_bus_message_read(m, "s", &old_owner);
+	if (ret < 0) {
+		errno = -ret;
+		swayidle_log_errno(LOG_ERROR, "Failed to get old_owner from NameOwnerChanged");
+		return 0;
+	}
+
+	ret = sd_bus_message_read(m, "s", &new_owner);
+	if (ret < 0) {
+		errno = -ret;
+		swayidle_log_errno(LOG_ERROR, "Failed to get new_owner from NameOwnerChanged");
+		return 0;
+	}
+
+	if (strcmp(name, old_owner) != 0) {
+		// if name is not equal to old_owner then this is a well-known name.
+		// we are looking for the loss of unique name caused by a connection loss.
+		return 0;
+	}
+
+	if (strcmp(new_owner, "") != 0) {
+		swayidle_log(LOG_ERROR, "Unique name has changed owner???");
+		return 0;
+	}
+
+	int count = 0;
+
+	struct screensaver_inhibitor *inhibitor = NULL;
+	struct screensaver_inhibitor *tmp = NULL;
+	wl_list_for_each_safe(inhibitor, tmp, &state.screensaver_inhibitors, link) {
+		if (strcmp(inhibitor->peer, name) == 0) {
+			swayidle_log(LOG_DEBUG, "Removing screensaver inhibitor: peer='%s' cookie=%"PRIu32, inhibitor->peer, inhibitor->cookie);
+			count += 1;
+			wl_list_remove(&inhibitor->link);
+			free(inhibitor->peer);
+			free(inhibitor);
+		}
+	}
+
+	if (count > 0) {
+		swayidle_log(LOG_DEBUG, "Removed %d screensaver inhibitors due to owner disconnect", count);
+	}
+
+	update_timeouts();
+
+	return 0;
+}
+
+static const sd_bus_vtable screensaver_vtable[] = {
+	SD_BUS_VTABLE_START(0),
+	SD_BUS_METHOD_WITH_ARGS("Inhibit", SD_BUS_ARGS("s", application_name, "s", reason_for_inhibit), SD_BUS_RESULT("u", cookie), handle_screensaver_method, SD_BUS_VTABLE_UNPRIVILEGED),
+	SD_BUS_METHOD_WITH_ARGS("UnInhibit", SD_BUS_ARGS("u", cookie), SD_BUS_NO_RESULT, handle_screensaver_method, SD_BUS_VTABLE_UNPRIVILEGED),
+	SD_BUS_VTABLE_END,
+};
+
+static void setup_screensaver(void) {
+	int ret = sd_bus_match_signal(bus_user, NULL, "org.freedesktop.DBus", "/org/freedesktop/DBus", "org.freedesktop.DBus", "NameOwnerChanged", handle_name_owner_changed, NULL);
+	if (ret < 0) {
+		errno = -ret;
+		swayidle_log_errno(LOG_ERROR, "Failed to add ScreenSaver vtable");
+		return;
+	}
+
+	ret = sd_bus_add_object_vtable(bus_user, NULL, DBUS_SCREENSAVER_PATH, DBUS_SCREENSAVER_INTERFACE, screensaver_vtable, NULL);
+	if (ret < 0) {
+		errno = -ret;
+		swayidle_log_errno(LOG_ERROR, "Failed to add ScreenSaver vtable");
+		return;
+	}
+
+	ret = sd_bus_request_name(bus_user, DBUS_SCREENSAVER_SERVICE, 0);
+	if (ret < 0) {
+		errno = -ret;
+		swayidle_log_errno(LOG_ERROR,
+						   "Failed to obtain the name " DBUS_SCREENSAVER_SERVICE);
+		return;
+	}
+
 }
 #endif
 
@@ -608,7 +835,6 @@ static void enable_timeouts(void) {
 	}
 }
 
-#if HAVE_SYSTEMD || HAVE_ELOGIND
 static void disable_timeouts(void) {
 	if (!state.timeouts_enabled) {
 		return;
@@ -620,11 +846,33 @@ static void disable_timeouts(void) {
 	wl_list_for_each(cmd, &state.timeout_cmds, link) {
 		destroy_cmd_timer(cmd);
 	}
+#if HAVE_SYSTEMD || HAVE_ELOGIND
 	if (state.logind_idlehint) {
 		set_idle_hint(false);
 	}
-}
 #endif
+}
+
+static void update_timeouts(void) {
+	bool timeout_wanted = true;
+
+#if HAVE_SYSTEMD || HAVE_ELOGIND
+	if (state.logind_inhibited) {
+		timeout_wanted = false;
+	}
+
+	if (!wl_list_empty(&state.screensaver_inhibitors)) {
+		timeout_wanted = false;
+	}
+#endif
+
+	if (timeout_wanted) {
+		enable_timeouts();
+	} else {
+		disable_timeouts();
+	}
+
+}
 
 static void handle_idled(void *data, struct ext_idle_notification_v1 *notif) {
 	struct swayidle_timeout_cmd *cmd = data;
@@ -826,7 +1074,7 @@ static int parse_idlehint(int argc, char **argv) {
 
 static int parse_args(int argc, char *argv[], char **config_path) {
 	int c;
-	while ((c = getopt(argc, argv, "C:hdwS:")) != -1) {
+	while ((c = getopt(argc, argv, "C:hdwS:s")) != -1) {
 		switch (c) {
 		case 'C':
 			free(*config_path);
@@ -841,6 +1089,13 @@ static int parse_args(int argc, char *argv[], char **config_path) {
 		case 'S':
 			state.seat_name = strdup(optarg);
 			break;
+		case 's':
+			state.screensaver = true;
+#if !HAVE_SYSTEMD && !HAVE_ELOGIND
+			swayidle_log(LOG_ERROR, "-s requires swayidle to be built with D-Bus support (systemd or elogind)");
+			exit(-1);
+#endif
+			break;
 		case 'h':
 		case '?':
 			printf("Usage: %s [OPTIONS]\n", argv[0]);
@@ -849,6 +1104,7 @@ static int parse_args(int argc, char *argv[], char **config_path) {
 			printf("  -d\tdebug\n");
 			printf("  -w\twait for command to finish\n");
 			printf("  -S\tpick the seat to work with\n");
+			printf("  -s\tclaim org.freedesktop.ScreenSaver\n");
 			return 1;
 		default:
 			return 1;
@@ -1016,6 +1272,7 @@ static int load_config(const char *config_path) {
 
 
 int main(int argc, char *argv[]) {
+	srand(time(NULL));
 	swayidle_init();
 	char *config_path = NULL;
 	if (parse_args(argc, argv, &config_path) != 0) {
@@ -1087,7 +1344,7 @@ int main(int argc, char *argv[]) {
 
 	bool should_run = !wl_list_empty(&state.timeout_cmds);
 #if HAVE_SYSTEMD || HAVE_ELOGIND
-	connect_to_bus();
+	connect_to_system_bus();
 	setup_property_changed_listener();
 	if (state.before_sleep_cmd || state.after_resume_cmd) {
 		should_run = true;
@@ -1104,13 +1361,22 @@ int main(int argc, char *argv[]) {
 	if (state.logind_idlehint) {
 		set_idle_hint(false);
 	}
+	if (state.screensaver) {
+		connect_to_user_bus();
+		setup_screensaver();
+	}
+
+	if (get_logind_idle_inhibit()) {
+		swayidle_log(LOG_INFO, "Not enabling timeouts: idle inhibitor found");
+		state.logind_inhibited = true;
+	}
 #endif
 	if (!should_run) {
 		swayidle_log(LOG_INFO, "No command specified! Nothing to do, will exit");
 		sway_terminate(0);
 	}
 
-	enable_timeouts();
+	update_timeouts();
 	wl_display_roundtrip(state.display);
 
 	struct wl_event_source *source = wl_event_loop_add_fd(state.event_loop,
