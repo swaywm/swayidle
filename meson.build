@@ -11,15 +11,14 @@ project(
 	],
 )
 
-add_project_arguments(
-	[
-		'-Wno-unused-parameter',
-		'-Wno-unused-result',
-		'-Wundef',
-		'-Wvla',
-	],
-	language: 'c',
-)
+add_project_arguments([
+	'-D_POSIX_C_SOURCE=200809L',
+
+	'-Wno-unused-parameter',
+	'-Wno-unused-result',
+	'-Wundef',
+	'-Wvla',
+], language: 'c')
 
 wayland_client = dependency('wayland-client')
 wayland_protos = dependency('wayland-protocols', version: '>=1.27')
