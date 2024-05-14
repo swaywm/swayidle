@@ -40,6 +40,7 @@ struct swayidle_state {
 	bool logind_idlehint;
 	bool timeouts_enabled;
 	bool wait;
+	bool reset_on_resume;
 } state;
 
 struct swayidle_timeout_cmd {
@@ -185,6 +186,7 @@ static void cmd_exec(char *param) {
 
 static void enable_timeouts(void);
 static void disable_timeouts(void);
+static void register_timeout(struct swayidle_timeout_cmd *cmd, int timeout);
 
 static int sleep_lock_fd = -1;
 static struct sd_bus *bus = NULL;
@@ -279,6 +281,17 @@ error:
 	return false;
 }
 
+static void reset_all_timeouts(void) {
+	struct swayidle_timeout_cmd *cmd;
+	wl_list_for_each(cmd, &state.timeout_cmds, link) {
+		if (cmd->resume_pending && cmd->resume_cmd) {
+			cmd_exec(cmd->resume_cmd);
+		}
+		cmd->resume_pending = false;
+		register_timeout(cmd, cmd->timeout);
+	}
+}
+
 static int prepare_for_sleep(sd_bus_message *msg, void *userdata,
 		sd_bus_error *ret_error) {
 	/* "b" apparently reads into an int, not a bool */
@@ -297,6 +310,10 @@ static int prepare_for_sleep(sd_bus_message *msg, void *userdata,
 		}
 		if (state.logind_idlehint) {
 			set_idle_hint(false);
+		}
+		if (state.reset_on_resume) {
+			swayidle_log(LOG_DEBUG, "Reset all timeouts on resume");
+			reset_all_timeouts();
 		}
 		return 0;
 	}
@@ -825,7 +842,7 @@ static int parse_idlehint(int argc, char **argv) {
 
 static int parse_args(int argc, char *argv[], char **config_path) {
 	int c;
-	while ((c = getopt(argc, argv, "C:hdwS:")) != -1) {
+	while ((c = getopt(argc, argv, "C:hdwS:r")) != -1) {
 		switch (c) {
 		case 'C':
 			free(*config_path);
@@ -840,6 +857,9 @@ static int parse_args(int argc, char *argv[], char **config_path) {
 		case 'S':
 			state.seat_name = strdup(optarg);
 			break;
+		case 'r':
+			state.reset_on_resume = true;
+			break;
 		case 'h':
 		case '?':
 			printf("Usage: %s [OPTIONS]\n", argv[0]);
@@ -848,6 +868,7 @@ static int parse_args(int argc, char *argv[], char **config_path) {
 			printf("  -d\tdebug\n");
 			printf("  -w\twait for command to finish\n");
 			printf("  -S\tpick the seat to work with\n");
+			printf("  -r\treset timeouts after resuming from sleep");
 			return 1;
 		default:
 			return 1;

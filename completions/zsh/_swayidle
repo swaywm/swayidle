@@ -12,7 +12,8 @@ if (($#words <= 2)); then
 	_arguments -C \
 			   '(-h --help)'{-h,--help}'[Show help message and quit]' \
 			   '(-d)'-d'[Enable debug output]' \
-			   '(-w)'-w'[Wait for command to finish executing before continuing]'
+			   '(-w)'-w'[Wait for command to finish executing before continuing]' \
+			   '(-r)'-r'[Reset timeouts after resuming from sleep]'
 
 elif  [[ "$words[-3]" == before-sleep || "$words[-3]" == resume ]]; then
 	_describe -t "events" 'swayidle' events
