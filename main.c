@@ -603,7 +603,9 @@ static void enable_timeouts(void) {
 	state.timeouts_enabled = true;
 	struct swayidle_timeout_cmd *cmd;
 	wl_list_for_each(cmd, &state.timeout_cmds, link) {
-		register_timeout(cmd, cmd->timeout);
+		if ((cmd->idle_notification == NULL && cmd->kde_idle_timer == NULL) || !cmd->resume_pending) {
+			register_timeout(cmd, cmd->timeout);
+		}
 	}
 }
 
@@ -617,7 +619,9 @@ static void disable_timeouts(void) {
 	state.timeouts_enabled = false;
 	struct swayidle_timeout_cmd *cmd;
 	wl_list_for_each(cmd, &state.timeout_cmds, link) {
-		destroy_cmd_timer(cmd);
+		if (!cmd->resume_pending) {
+			destroy_cmd_timer(cmd);
+		}
 	}
 	if (state.logind_idlehint) {
 		set_idle_hint(false);
@@ -643,7 +647,9 @@ static void handle_resumed(void *data, struct ext_idle_notification_v1 *notif) {
 	struct swayidle_timeout_cmd *cmd = data;
 	cmd->resume_pending = false;
 	swayidle_log(LOG_DEBUG, "active state");
-	if (cmd->registered_timeout != cmd->timeout) {
+	if (!state.timeouts_enabled) {
+		destroy_cmd_timer(cmd);
+	} else if (cmd->registered_timeout != cmd->timeout) {
 		register_timeout(cmd, cmd->timeout);
 	}
 #if HAVE_SYSTEMD || HAVE_ELOGIND
