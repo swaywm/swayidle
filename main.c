@@ -67,6 +67,8 @@ static const char *verbosity_colors[] = {
 	[LOG_DEBUG ] = "\x1B[1;30m",
 };
 
+static bool lock_on_start = false;
+
 static enum log_importance log_importance = LOG_INFO;
 
 void swayidle_log_init(enum log_importance verbosity) {
@@ -825,7 +827,7 @@ static int parse_idlehint(int argc, char **argv) {
 
 static int parse_args(int argc, char *argv[], char **config_path) {
 	int c;
-	while ((c = getopt(argc, argv, "C:hdwS:")) != -1) {
+	while ((c = getopt(argc, argv, "C:hdwlS:")) != -1) {
 		switch (c) {
 		case 'C':
 			free(*config_path);
@@ -839,6 +841,9 @@ static int parse_args(int argc, char *argv[], char **config_path) {
 			break;
 		case 'S':
 			state.seat_name = strdup(optarg);
+			break;
+		case 'l':
+			lock_on_start = true;
 			break;
 		case 'h':
 		case '?':
@@ -1116,6 +1121,11 @@ int main(int argc, char *argv[]) {
 		wl_display_get_fd(state.display), WL_EVENT_READABLE,
 		display_event, NULL);
 	wl_event_source_check(source);
+
+
+	if (lock_on_start) {
+		kill(getpid(), SIGUSR1);
+	}
 
 	while (wl_event_loop_dispatch(state.event_loop, -1) != 1) {
 		// This space intentionally left blank
