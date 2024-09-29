@@ -206,6 +206,7 @@ static void cmd_exec(char *param) {
 #define DBUS_SCREENSAVER_SERVICE "org.freedesktop.ScreenSaver"
 #define DBUS_SCREENSAVER_INTERFACE "org.freedesktop.ScreenSaver"
 #define DBUS_SCREENSAVER_PATH "/org/freedesktop/ScreenSaver"
+#define DBUS_SCREENSAVER_PATH2 "/ScreenSaver"
 
 static void update_timeouts(void);
 
@@ -733,6 +734,13 @@ static void setup_screensaver(void) {
 	}
 
 	ret = sd_bus_add_object_vtable(bus_user, NULL, DBUS_SCREENSAVER_PATH, DBUS_SCREENSAVER_INTERFACE, screensaver_vtable, NULL);
+	if (ret < 0) {
+		errno = -ret;
+		swayidle_log_errno(LOG_ERROR, "Failed to add ScreenSaver vtable");
+		return;
+	}
+
+	ret = sd_bus_add_object_vtable(bus_user, NULL, DBUS_SCREENSAVER_PATH2, DBUS_SCREENSAVER_INTERFACE, screensaver_vtable, NULL);
 	if (ret < 0) {
 		errno = -ret;
 		swayidle_log_errno(LOG_ERROR, "Failed to add ScreenSaver vtable");
