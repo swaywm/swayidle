@@ -30,6 +30,10 @@ swayidle - Idle manager for Wayland
 *-S* <seat-name>
 	Specify which seat to use. By default, if no name is specified, an arbitrary seat will be picked instead.
 
+*-s*
+	Expose the org.freedesktop.ScreenSaver D-Bus interface. This allows other processes to inhibit idle
+
+
 # DESCRIPTION
 
 swayidle listens for idle activity on your Wayland compositor and executes tasks
