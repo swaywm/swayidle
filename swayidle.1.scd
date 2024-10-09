@@ -21,6 +21,9 @@ swayidle - Idle manager for Wayland
 *-d*
 	Enable debug output.
 
+*-f*
+	Fork and daemonize after fully initialized.
+
 *-w*
 	Wait for command to finish executing before continuing, helpful for ensuring
 	that a *before-sleep* command has finished before the system goes to sleep.
