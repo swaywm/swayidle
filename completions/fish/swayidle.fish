@@ -10,3 +10,4 @@ complete -c swayidle --condition "__fish_seen_subcommand_from $time_events" --ex
 complete -c swayidle -s h --description 'show help'
 complete -c swayidle -s d --description 'debug'
 complete -c swayidle -s w --description 'wait for command to finish'
+complete -c swayidle -s r --description 'reset timeouts after resuming from sleep'
