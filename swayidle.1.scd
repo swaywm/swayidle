@@ -30,6 +30,10 @@ swayidle - Idle manager for Wayland
 *-S* <seat-name>
 	Specify which seat to use. By default, if no name is specified, an arbitrary seat will be picked instead.
 
+*-l*
+	Lock the screen when swayidle starts. Useful in case of auto-login, when we want the wayland session
+	automatically started, but locked.
+
 # DESCRIPTION
 
 swayidle listens for idle activity on your Wayland compositor and executes tasks
