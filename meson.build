@@ -21,7 +21,7 @@ add_project_arguments([
 ], language: 'c')
 
 wayland_client = dependency('wayland-client')
-wayland_protos = dependency('wayland-protocols', version: '>=1.27')
+wayland_protos = dependency('wayland-protocols', version: '>=1.40')
 wayland_server = dependency('wayland-server')
 logind = dependency('lib' + get_option('logind-provider'), required: get_option('logind'))
 scdoc = find_program('scdoc', required: get_option('man-pages'))

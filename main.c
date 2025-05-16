@@ -573,7 +573,7 @@ static void destroy_cmd_timer(struct swayidle_timeout_cmd *cmd) {
 }
 
 static void register_timeout(struct swayidle_timeout_cmd *cmd,
-		int timeout) {
+		int timeout, bool obey_inhibitors) {
 	destroy_cmd_timer(cmd);
 
 	if (timeout < 0) {
@@ -581,8 +581,14 @@ static void register_timeout(struct swayidle_timeout_cmd *cmd,
 		return;
 	}
 	swayidle_log(LOG_DEBUG, "Register with timeout: %d", timeout);
-	cmd->idle_notification =
-		ext_idle_notifier_v1_get_idle_notification(idle_notifier, timeout, seat);
+	uint32_t version = ext_idle_notifier_v1_get_version(idle_notifier);
+	if (obey_inhibitors || version < EXT_IDLE_NOTIFIER_V1_GET_INPUT_IDLE_NOTIFICATION_SINCE_VERSION) {
+		cmd->idle_notification = ext_idle_notifier_v1_get_idle_notification(
+			idle_notifier, timeout, seat);
+	} else {
+		cmd->idle_notification = ext_idle_notifier_v1_get_input_idle_notification(
+			idle_notifier, timeout, seat);
+	}
 	ext_idle_notification_v1_add_listener(cmd->idle_notification,
 		&idle_notification_listener, cmd);
 	cmd->registered_timeout = timeout;
@@ -603,7 +609,7 @@ static void enable_timeouts(void) {
 	state.timeouts_enabled = true;
 	struct swayidle_timeout_cmd *cmd;
 	wl_list_for_each(cmd, &state.timeout_cmds, link) {
-		register_timeout(cmd, cmd->timeout);
+		register_timeout(cmd, cmd->timeout, true);
 	}
 }
 
@@ -644,7 +650,7 @@ static void handle_resumed(void *data, struct ext_idle_notification_v1 *notif) {
 	cmd->resume_pending = false;
 	swayidle_log(LOG_DEBUG, "active state");
 	if (cmd->registered_timeout != cmd->timeout) {
-		register_timeout(cmd, cmd->timeout);
+		register_timeout(cmd, cmd->timeout, true);
 	}
 #if HAVE_SYSTEMD || HAVE_ELOGIND
 	if (cmd->idlehint) {
@@ -899,7 +905,7 @@ static int handle_signal(int sig, void *data) {
 	case SIGUSR1:
 		swayidle_log(LOG_DEBUG, "Got SIGUSR1");
 		wl_list_for_each(cmd, &state.timeout_cmds, link) {
-			register_timeout(cmd, 0);
+			register_timeout(cmd, 0, false);
 		}
 		return 1;
 	}
