@@ -1086,8 +1086,13 @@ int main(int argc, char *argv[]) {
 
 	bool should_run = !wl_list_empty(&state.timeout_cmds);
 #if HAVE_SYSTEMD || HAVE_ELOGIND
-	connect_to_bus();
-	setup_property_changed_listener();
+	bool need_logind = state.before_sleep_cmd || state.after_resume_cmd ||
+		state.logind_lock_cmd || state.logind_unlock_cmd ||
+		state.logind_idlehint;
+	if (state.need_logind) {
+		connect_to_bus();
+		setup_property_changed_listener();
+	}
 	if (state.before_sleep_cmd || state.after_resume_cmd) {
 		should_run = true;
 		setup_sleep_listener();
