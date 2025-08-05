@@ -1,16 +1,16 @@
 image: alpine/edge
 packages:
+  - elogind-dev
   - meson
+  - scdoc
   - wayland-dev
   - wayland-protocols
-  - scdoc
 sources:
   - https://github.com/swaywm/swayidle
 tasks:
   - setup: |
       cd swayidle
-      meson build
+      meson -Dlogind=enabled build
   - build: |
       cd swayidle
       ninja -C build
-
