@@ -1089,7 +1089,7 @@ int main(int argc, char *argv[]) {
 	bool need_logind = state.before_sleep_cmd || state.after_resume_cmd ||
 		state.logind_lock_cmd || state.logind_unlock_cmd ||
 		state.logind_idlehint;
-	if (state.need_logind) {
+	if (need_logind) {
 		connect_to_bus();
 		setup_property_changed_listener();
 	}
