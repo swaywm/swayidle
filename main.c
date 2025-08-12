@@ -960,12 +960,24 @@ static char *get_config_path(void) {
 	return NULL;
 }
 
+static const char *wordexp_strerror(int err) {
+	switch (err) {
+		case WRDE_BADCHAR: return "illegal character";
+		case WRDE_BADVAL:  return "undefined shell variable";
+		case WRDE_CMDSUB:  return "command substitutions are forbidden";
+		case WRDE_NOSPACE: return "out of memory";
+		case WRDE_SYNTAX:  return "syntax error";
+		default:           return "unknown error";
+	}
+}
+
 static int load_config(const char *config_path) {
 	FILE *f = fopen(config_path, "r");
 	if (!f) {
 		return -ENOENT;
 	}
 
+	int we_err = 0;
 	size_t lineno = 0;
 	char *line = NULL;
 	size_t n = 0;
@@ -986,7 +998,12 @@ static int load_config(const char *config_path) {
 		}
 
 		wordexp_t p;
-		wordexp(line, &p, 0);
+		if ((we_err = wordexp(line, &p, 0)) != 0) {
+			swayidle_log(LOG_ERROR, "Shell expansion error on line %zu: %s (%d)", lineno, wordexp_strerror(we_err), we_err);
+			free(line);
+			return -EINVAL;
+		}
+
 		if (strncmp("timeout", line, i) == 0) {
 			parse_timeout(p.we_wordc, p.we_wordv);
 		} else if (strncmp("before-sleep", line, i) == 0) {
