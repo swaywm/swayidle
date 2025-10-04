@@ -20,7 +20,7 @@ add_project_arguments([
 	'-Wvla',
 ], language: 'c')
 
-wayland_client = dependency('wayland-client')
+wayland_client = dependency('wayland-client', version: '>=1.24')
 wayland_protos = dependency('wayland-protocols', version: '>=1.40')
 wayland_server = dependency('wayland-server')
 logind = dependency('lib' + get_option('logind-provider'), required: get_option('logind'))

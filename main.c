@@ -919,7 +919,8 @@ static int display_event(int fd, uint32_t mask, void *data) {
 
 	int count = 0;
 	if (mask & WL_EVENT_READABLE) {
-		count = wl_display_dispatch(state.display);
+		struct timespec timeout = {};
+		count = wl_display_dispatch_timeout(state.display, &timeout);
 	}
 	if (mask & WL_EVENT_WRITABLE) {
 		wl_display_flush(state.display);
