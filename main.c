@@ -912,6 +912,16 @@ static int handle_signal(int sig, void *data) {
 	abort(); // not reached
 }
 
+static int display_dispatch(struct wl_display *display) {
+	if (wl_display_prepare_read(display) == -1) {
+		return wl_display_dispatch_pending(display);
+	}
+	if (wl_display_read_events(display)  == -1) {
+		return -1;
+	}
+	return wl_display_dispatch_pending(display);
+}
+
 static int display_event(int fd, uint32_t mask, void *data) {
 	if ((mask & WL_EVENT_HANGUP) || (mask & WL_EVENT_ERROR)) {
 		sway_terminate(0);
@@ -919,7 +929,7 @@ static int display_event(int fd, uint32_t mask, void *data) {
 
 	int count = 0;
 	if (mask & WL_EVENT_READABLE) {
-		count = wl_display_dispatch(state.display);
+		count = display_dispatch(state.display);
 	}
 	if (mask & WL_EVENT_WRITABLE) {
 		wl_display_flush(state.display);
