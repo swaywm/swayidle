@@ -9,6 +9,7 @@ _swayidle()
 
   events=(
     'timeout'
+    'input-timeout'
     'before-sleep'
   )
 
@@ -18,15 +19,15 @@ _swayidle()
     -w
   )
 
-  if [ "$prev" = timeout ]; then
-    # timeout <timeout>
+  if [ "$prev" = timeout ] || [ "$prev" = input-timeout ]; then
+    # (input-)timeout <timeout>
     return
-  elif [ "$prev2" = timeout ]; then
-    # timeout <timeout> <timeout command>
+  elif [ "$prev2" = timeout ] || [ "$prev2" = input-timeout ]; then
+    # (input-)timeout <timeout> <timeout command>
     COMPREPLY=($(compgen -c -- "$cur"))
     return
-  elif [ "$prev3" = timeout ]; then
-    # timeout <timeout> <timeout command> [resume <resume command>]
+  elif [ "$prev3" = timeout ] || [ "$prev3" = input-timeout ]; then
+    # (input-)timeout <timeout> <timeout command> [resume <resume command>]
     COMPREPLY=(resume)
     # optional argument; no return here as user may skip 'resume'
   fi

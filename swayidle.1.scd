@@ -44,6 +44,13 @@ command line and in the config file.
 	If you specify "resume <resume command>", _resume command_ will be run when
 	there is activity again.
 
+*input-timeout* <timeout> <timeout command> [resume <resume command>]
+	Execute _timeout command_ if there is no user input activity for <timeout> seconds.
+	Note, this ignores any idle inhibitors and requires support for *ext_idle_notifier_v1* version 2.
+
+	If you specify "resume <resume command>", _resume command_ will be run when
+	there is input activity again.
+
 *before-sleep* <command>
 	If built with systemd support, executes _command_ before systemd puts the
 	computer to sleep.
