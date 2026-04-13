@@ -542,8 +542,8 @@ static const struct wl_seat_listener wl_seat_listener = {
 static void handle_global(void *data, struct wl_registry *registry,
 		uint32_t name, const char *interface, uint32_t version) {
 	if (strcmp(interface, ext_idle_notifier_v1_interface.name) == 0) {
-		idle_notifier =
-			wl_registry_bind(registry, name, &ext_idle_notifier_v1_interface, 1);
+		idle_notifier = wl_registry_bind(registry, name,
+				&ext_idle_notifier_v1_interface, version >= 2 ? 2 : 1);
 	} else if (strcmp(interface, wl_seat_interface.name) == 0) {
 		struct seat *s = calloc(1, sizeof(struct seat));
 		s->proxy = wl_registry_bind(registry, name, &wl_seat_interface, 2);
