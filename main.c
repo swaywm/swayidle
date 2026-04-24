@@ -680,10 +680,10 @@ static char *parse_command(int argc, char **argv) {
 static struct swayidle_timeout_cmd *build_timeout_cmd(int argc, char **argv) {
 	errno = 0;
 	char *endptr;
-	int seconds = strtoul(argv[1], &endptr, 10);
+	float seconds = strtof(argv[1], &endptr);
 	if (errno != 0 || *endptr != '\0') {
 		swayidle_log(LOG_ERROR, "Invalid %s parameter '%s', it should be a "
-				"numeric value representing seconds", argv[0], argv[1]);
+				"float value representing seconds", argv[0], argv[1]);
 		exit(-1);
 	}
 
@@ -693,7 +693,7 @@ static struct swayidle_timeout_cmd *build_timeout_cmd(int argc, char **argv) {
 	cmd->resume_pending = false;
 
 	if (seconds > 0) {
-		cmd->timeout = seconds * 1000;
+		cmd->timeout = (int)(seconds * 1000);
 	} else {
 		cmd->timeout = -1;
 	}
