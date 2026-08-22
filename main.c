@@ -412,6 +412,9 @@ static int dbus_event(int fd, uint32_t mask, void *data) {
 		sd_bus_flush(bus);
 	}
 	if (mask == 0) {
+		while ((count = sd_bus_process(bus, NULL)) > 0) {
+			// Keep going until the queue is empty.
+		}
 		sd_bus_flush(bus);
 	}
 
