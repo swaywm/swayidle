@@ -42,13 +42,19 @@ struct swayidle_state {
 	bool wait;
 } state;
 
+enum swayidle_timeout_type {
+	TIMEOUT_TYPE_REGULAR,
+	TIMEOUT_TYPE_IDLE_HINT,
+	TIMEOUT_TYPE_INPUT_IDLE,
+};
+
 struct swayidle_timeout_cmd {
 	struct wl_list link;
+	enum swayidle_timeout_type type;
 	int timeout, registered_timeout;
 	struct ext_idle_notification_v1 *idle_notification;
 	char *idle_cmd;
 	char *resume_cmd;
-	bool idlehint;
 	bool resume_pending;
 };
 
@@ -583,9 +589,17 @@ static void register_timeout(struct swayidle_timeout_cmd *cmd,
 		swayidle_log(LOG_DEBUG, "Not registering idle timeout");
 		return;
 	}
-	swayidle_log(LOG_DEBUG, "Register with timeout: %d", timeout);
+
 	uint32_t version = ext_idle_notifier_v1_get_version(idle_notifier);
-	if (obey_inhibitors || version < EXT_IDLE_NOTIFIER_V1_GET_INPUT_IDLE_NOTIFICATION_SINCE_VERSION) {
+	if (cmd->type == TIMEOUT_TYPE_INPUT_IDLE
+			&& version < EXT_IDLE_NOTIFIER_V1_GET_INPUT_IDLE_NOTIFICATION_SINCE_VERSION) {
+		swayidle_log(LOG_DEBUG, "Not registering input idle timeout");
+		return;
+	}
+
+	swayidle_log(LOG_DEBUG, "Register with timeout: %d", timeout);
+	if (cmd->type != TIMEOUT_TYPE_INPUT_IDLE
+			&& (obey_inhibitors || version < EXT_IDLE_NOTIFIER_V1_GET_INPUT_IDLE_NOTIFICATION_SINCE_VERSION)) {
 		cmd->idle_notification = ext_idle_notifier_v1_get_idle_notification(
 			idle_notifier, timeout, seat);
 	} else {
@@ -597,13 +611,26 @@ static void register_timeout(struct swayidle_timeout_cmd *cmd,
 	cmd->registered_timeout = timeout;
 }
 
+static void enable_inactive_input_timeouts() {
+	swayidle_log(LOG_DEBUG, "Enable input idle timeouts");
+	struct swayidle_timeout_cmd *cmd;
+	wl_list_for_each(cmd, &state.timeout_cmds, link) {
+		if (cmd->type == TIMEOUT_TYPE_INPUT_IDLE
+				&& cmd->idle_notification == NULL) {
+			register_timeout(cmd, cmd->timeout, true);
+		}
+	}
+}
+
 static void enable_timeouts(void) {
 	if (state.timeouts_enabled) {
+		enable_inactive_input_timeouts();
 		return;
 	}
 #if HAVE_SYSTEMD || HAVE_ELOGIND
 	if (get_logind_idle_inhibit()) {
 		swayidle_log(LOG_INFO, "Not enabling timeouts: idle inhibitor found");
+		enable_inactive_input_timeouts();
 		return;
 	}
 #endif
@@ -612,6 +639,11 @@ static void enable_timeouts(void) {
 	state.timeouts_enabled = true;
 	struct swayidle_timeout_cmd *cmd;
 	wl_list_for_each(cmd, &state.timeout_cmds, link) {
+		if (cmd->type == TIMEOUT_TYPE_INPUT_IDLE
+				&& cmd->idle_notification != NULL) {
+			// Skip already active input idle timeouts
+			continue;
+		}
 		register_timeout(cmd, cmd->timeout, true);
 	}
 }
@@ -626,7 +658,9 @@ static void disable_timeouts(void) {
 	state.timeouts_enabled = false;
 	struct swayidle_timeout_cmd *cmd;
 	wl_list_for_each(cmd, &state.timeout_cmds, link) {
-		destroy_cmd_timer(cmd);
+		if (cmd->type != TIMEOUT_TYPE_INPUT_IDLE) {
+			destroy_cmd_timer(cmd);
+		}
 	}
 	if (state.logind_idlehint) {
 		set_idle_hint(false);
@@ -639,7 +673,7 @@ static void handle_idled(void *data, struct ext_idle_notification_v1 *notif) {
 	cmd->resume_pending = true;
 	swayidle_log(LOG_DEBUG, "idle state");
 #if HAVE_SYSTEMD || HAVE_ELOGIND
-	if (cmd->idlehint) {
+	if (cmd->type == TIMEOUT_TYPE_IDLE_HINT) {
 		set_idle_hint(true);
 	} else
 #endif
@@ -656,7 +690,7 @@ static void handle_resumed(void *data, struct ext_idle_notification_v1 *notif) {
 		register_timeout(cmd, cmd->timeout, true);
 	}
 #if HAVE_SYSTEMD || HAVE_ELOGIND
-	if (cmd->idlehint) {
+	if (cmd->type == TIMEOUT_TYPE_IDLE_HINT) {
 		set_idle_hint(false);
 	} else
 #endif
@@ -680,7 +714,8 @@ static char *parse_command(int argc, char **argv) {
 	return strdup(argv[0]);
 }
 
-static struct swayidle_timeout_cmd *build_timeout_cmd(int argc, char **argv) {
+static struct swayidle_timeout_cmd *build_timeout_cmd(int argc, char **argv,
+		enum swayidle_timeout_type type) {
 	errno = 0;
 	char *endptr;
 	int seconds = strtoul(argv[1], &endptr, 10);
@@ -692,7 +727,7 @@ static struct swayidle_timeout_cmd *build_timeout_cmd(int argc, char **argv) {
 
 	struct swayidle_timeout_cmd *cmd =
 		calloc(1, sizeof(struct swayidle_timeout_cmd));
-	cmd->idlehint = false;
+	cmd->type = type;
 	cmd->resume_pending = false;
 
 	if (seconds > 0) {
@@ -704,16 +739,21 @@ static struct swayidle_timeout_cmd *build_timeout_cmd(int argc, char **argv) {
 	return cmd;
 }
 
-static int parse_timeout(int argc, char **argv) {
+static int parse_timeout(int argc, char **argv, bool is_input_timeout) {
 	if (argc < 3) {
 		swayidle_log(LOG_ERROR, "Too few parameters to timeout command. "
 				"Usage: timeout <seconds> <command>");
 		exit(-1);
 	}
 
-	struct swayidle_timeout_cmd *cmd = build_timeout_cmd(argc, argv);
+	struct swayidle_timeout_cmd *cmd = build_timeout_cmd(argc, argv,
+			is_input_timeout ? TIMEOUT_TYPE_INPUT_IDLE : TIMEOUT_TYPE_REGULAR);
 
-	swayidle_log(LOG_DEBUG, "Register idle timeout at %d ms", cmd->timeout);
+	if (!is_input_timeout) {
+		swayidle_log(LOG_DEBUG, "Register idle timeout at %d ms", cmd->timeout);
+	} else {
+		swayidle_log(LOG_DEBUG, "Register input idle timeout at %d ms", cmd->timeout);
+	}
 	swayidle_log(LOG_DEBUG, "Setup idle");
 	cmd->idle_cmd = parse_command(argc - 2, &argv[2]);
 
@@ -823,8 +863,7 @@ static int parse_idlehint(int argc, char **argv) {
 		exit(-1);
 	}
 
-	struct swayidle_timeout_cmd *cmd = build_timeout_cmd(argc, argv);
-	cmd->idlehint = true;
+	struct swayidle_timeout_cmd *cmd = build_timeout_cmd(argc, argv, TIMEOUT_TYPE_IDLE_HINT);
 
 	swayidle_log(LOG_DEBUG, "Register idlehint timeout at %d ms", cmd->timeout);
 	wl_list_insert(&state.timeout_cmds, &cmd->link);
@@ -867,7 +906,10 @@ static int parse_args(int argc, char *argv[], char **config_path) {
 	while (i < argc) {
 		if (!strcmp("timeout", argv[i])) {
 			swayidle_log(LOG_DEBUG, "Got timeout");
-			i += parse_timeout(argc - i, &argv[i]);
+			i += parse_timeout(argc - i, &argv[i], false);
+		} else if (!strcmp("input-timeout", argv[i])) {
+			swayidle_log(LOG_DEBUG, "Got input-timeout");
+			i += parse_timeout(argc - i, &argv[i], true);
 		} else if (!strcmp("before-sleep", argv[i])) {
 			swayidle_log(LOG_DEBUG, "Got before-sleep");
 			i += parse_sleep(argc - i, &argv[i]);
@@ -1024,7 +1066,9 @@ static int load_config(const char *config_path) {
 		}
 
 		if (strncmp("timeout", line, i) == 0) {
-			parse_timeout(p.we_wordc, p.we_wordv);
+			parse_timeout(p.we_wordc, p.we_wordv, false);
+		} else if (strncmp("input-timeout", line, i) == 0) {
+			parse_timeout(p.we_wordc, p.we_wordv, true);
 		} else if (strncmp("before-sleep", line, i) == 0) {
 			parse_sleep(p.we_wordc, p.we_wordv);
 		} else if (strncmp("after-resume", line, i) == 0) {
