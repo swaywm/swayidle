@@ -16,6 +16,7 @@ _swayidle()
     -h
     -d
     -w
+    -r
   )
 
   if [ "$prev" = timeout ]; then
