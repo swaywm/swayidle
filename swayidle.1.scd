@@ -30,6 +30,10 @@ swayidle - Idle manager for Wayland
 *-S* <seat-name>
 	Specify which seat to use. By default, if no name is specified, an arbitrary seat will be picked instead.
 
+*-r*
+	If built with systemd support, reset all timeouts after logind signals that
+	the computer resumed from sleep, i.e. treat wake-up signals as activities.
+
 # DESCRIPTION
 
 swayidle listens for idle activity on your Wayland compositor and executes tasks
