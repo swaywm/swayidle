@@ -69,7 +69,7 @@ command line and in the config file.
 	session after <timeout> seconds. Adding an idlehint event will also cause
 	swayidle to call SetIdleHint(false) when run, on resume, unlock, etc.
 
-All commands are executed in a shell.
+All commands are executed in a shell, and should be quoted or escaped appropriately if the command contains whitespace of other special shell characters.
 
 # SIGNALS
 
@@ -97,6 +97,16 @@ It will also lock your screen before your computer goes to sleep.
 
 To make sure swayidle waits for swaylock to lock the screen before it releases the
 inhibition lock, the *-w* options is used in swayidle, and *-f* in swaylock.
+
+The events can alternatively be put into a configuration file as follows:
+
+```
+timeout 300 'swaylock -f -c 000000'
+timeout 600 'swaymsg "output * power off"' resume 'swaymsg "output * power on"'
+before-sleep 'swaylock -f -c 000000'
+```
+
+If a default location is chosen, the swayidle instantiation is then simply `swayidle -w`.
 
 # AUTHORS
 
